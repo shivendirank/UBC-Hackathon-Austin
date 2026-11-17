@@ -12,7 +12,8 @@ import os
 
 from mcp.server.mcpserver import MCPServer  # mcp 2.x (FastMCP was renamed)
 
-from . import db, service
+from . import db, incidents, service
+from .gemini import Gemini
 
 mcp = MCPServer("thin-ice", instructions="Grades how much money it would take to move a Gemini prediction market's odds.")
 conn = db.connect()
@@ -46,6 +47,55 @@ def mint_receipt(symbol: str) -> dict:
         return service.mint_receipt(conn, symbol, reason="grok_bot")
     except LookupError:
         return {"error": f"{symbol} is not graded yet"}
+
+
+@mcp.tool()
+def list_incidents(status: str = "open") -> dict:
+    """Incidents the deterministic engines flagged: price inconsistencies across related contracts
+    and unusual moves on thin books. status: open | reported | resolved."""
+    rows = incidents.list_incidents(conn, status or None, 20)
+    return {"incidents": [{k: r[k] for k in ("id", "kind", "subject", "status", "conclusion", "opened_at")} for r in rows]}
+
+
+@mcp.tool()
+def get_incident(incident_id: int) -> dict:
+    """Full evidence for an incident: the engine output, timeline, latest check, and each contract's
+    settlement rules and expiry (compare these to decide 'different_rules')."""
+    return incidents.get_incident(conn, incident_id) or {"error": "not found"}
+
+
+@mcp.tool()
+def recheck(incident_id: int) -> dict:
+    """Fetch fresh, synchronized order books for every contract in the incident and re-run the math.
+    Use this before concluding: it separates stale-quote artifacts from real inconsistencies."""
+    client = Gemini()
+    try:
+        return incidents.recheck(conn, client, incident_id)
+    except (LookupError, ValueError) as exc:
+        return {"error": str(exc)}
+    finally:
+        client.close()
+
+
+@mcp.tool()
+def submit_report(incident_id: int, conclusion: str, summary: str, sources: list[str], details: str = "") -> dict:
+    """File the investigation. conclusion: confirmed_inconsistency | stale_data | different_rules |
+    inconclusive | no_issue. Cite sources (URLs). Describe liquidity and pricing, never intent:
+    do not allege manipulation."""
+    try:
+        return incidents.submit_report(conn, incident_id, conclusion, summary, sources, details)
+    except ValueError as exc:
+        return {"error": str(exc)}
+
+
+@mcp.tool()
+def publish_assessment(incident_id: int) -> dict:
+    """For a significant finding you concluded 'confirmed_inconsistency': pin the books and record the
+    consistency assessment on Solana so other apps can apply their risk policy."""
+    inc = incidents.get_incident(conn, incident_id)
+    if not inc or inc["kind"] != "inconsistency":
+        return {"error": "publish_assessment needs an inconsistency incident"}
+    return service.mint_consistency(conn, inc["subject"], reason=f"incident:{incident_id}")
 
 
 if __name__ == "__main__":

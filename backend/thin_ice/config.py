@@ -46,3 +46,15 @@ RECEIPT_AUTHORITY_KEYPAIR = _env("RECEIPT_AUTHORITY_KEYPAIR")  # path to a JSON 
 
 ADMIN_TOKEN = _env("ADMIN_TOKEN")  # required for POST endpoints that mint
 CORS_ORIGINS = [o for o in _env("CORS_ORIGINS", "http://localhost:3000").split(",") if o]
+
+# Consistency engine
+RELATIONS_PATH = Path(_env("RELATIONS_PATH", str(Path(__file__).resolve().parent.parent / "relations.json")))
+# [verify] Gemini prediction-market trading fees; 0 means "before fees".
+FEE_CENTS_PER_CONTRACT = float(_env("FEE_CENTS_PER_CONTRACT", "0"))
+# Books recorded further apart than this can't confirm a contradiction (status "stale").
+SYNC_TOLERANCE_S = int(_env("SYNC_TOLERANCE_S", "120"))
+
+# Grok Bot Sentinel: routine webhook URL that receives new incidents (optional)
+GROK_ROUTINE_WEBHOOK = _env("GROK_ROUTINE_WEBHOOK")
+GROK_ROUTINE_TOKEN = _env("GROK_ROUTINE_TOKEN")  # sent as a Bearer header if set [verify]
+PUBLIC_API_URL = _env("PUBLIC_API_URL", "http://localhost:8000")

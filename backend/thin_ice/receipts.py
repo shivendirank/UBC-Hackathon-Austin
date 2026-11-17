@@ -15,6 +15,7 @@ import hashlib
 import json
 import struct
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Optional
 
 import httpx
@@ -65,10 +66,38 @@ def rescore(snapshot: dict) -> Score:
     )
 
 
+def make_consistency_snapshot(relation: dict, books: dict, ts: int, fee_c: float, sync_tolerance_s: int) -> dict:
+    """books: {symbol: {"ts", "bids", "asks"}} exactly as used by the check."""
+    return {
+        "formula_version": FORMULA_VERSION,
+        "type": "consistency",
+        "ts": ts,
+        "relation": {k: relation[k] for k in ("id", "kind", "members", "verified")},
+        "books": {s: {"ts": b["ts"],
+                      "bids": [{"price": lv["price"], "amount": lv["amount"]} for lv in b["bids"]],
+                      "asks": [{"price": lv["price"], "amount": lv["amount"]} for lv in b["asks"]]}
+                  for s, b in sorted(books.items())},
+        "fee_c": fee_c,
+        "sync_tolerance_s": sync_tolerance_s,
+        "source": "gemini:/v1/book",
+    }
+
+
+def recheck_snapshot(snapshot: dict) -> dict:
+    """Re-run the consistency engine on a pinned snapshot."""
+    from .consistency import Relation, book_from, check
+
+    r = snapshot["relation"]
+    rel = Relation(r["id"], r["kind"], r["members"], verified=r["verified"])
+    books = {s: book_from(s, b["ts"], b["bids"], b["asks"]) for s, b in snapshot["books"].items()}
+    return check(rel, books, now=snapshot["ts"], fee_c=snapshot["fee_c"],
+                 sync_tolerance_s=snapshot["sync_tolerance_s"]).to_dict()
+
+
 # ---------- onchain encoding (Anchor) ----------
 
 def market_id(symbol: str) -> bytes:
-    """32-byte market id = sha256(instrument symbol)."""
+    """32-byte id = sha256(subject): an instrument symbol, or "relation:<id>" for consistency checks."""
     return hashlib.sha256(symbol.encode()).digest()
 
 
@@ -85,18 +114,80 @@ def encode_init_market(symbol: str) -> bytes:
     return anchor_discriminator("init_market") + market_id(symbol) + _borsh_string(symbol[:64])
 
 
-def encode_record_receipt(score: Score, snap_hash_hex: str, uri: str) -> bytes:
+# Assessment kinds and risk flags. Keep in sync with programs/odds_receipt/src/lib.rs.
+KIND_LIQUIDITY = 0
+KIND_CONSISTENCY = 1
+
+FLAG_THIN = 1 << 0                      # moves 10 cents for under $100
+FLAG_EXHAUSTED = 1 << 1                 # visible book runs out before a 10-cent move
+FLAG_NO_RECENT_TRADE = 1 << 2           # no trade in 24 h
+FLAG_WIDE_SPREAD = 1 << 3               # spread over 10 cents
+FLAG_ONE_SIDED = 1 << 4                 # bids or asks missing
+FLAG_INCONSISTENT = 1 << 5              # related prices contradict each other (displayed prices)
+FLAG_INCONSISTENT_EXECUTABLE = 1 << 6   # ... and the contradiction holds at executable prices
+FLAG_UNSYNCED = 1 << 7                  # books too far apart in time to confirm
+FLAG_UNVERIFIED_RELATION = 1 << 8       # relationship suggested, not verified
+
+CHECK_GRADE = {"coherent": 0, "theoretical_only": 2, "stale": 3, "executable": 4, "insufficient_data": 4}
+
+
+@dataclass
+class Assessment:
+    """What goes onchain. One shape for liquidity grades and consistency checks."""
+    subject: str  # instrument symbol, or "relation:<id>"
+    kind: int
+    ts: int
+    price_bps: int  # liquidity: mid price; consistency: incoherence gap (cents * 100)
+    move_cost_cents: int
+    spread_bps: int
+    grade: int  # 0=A ... 4=F
+    flags: int
+
+
+def assessment_from_score(score: Score) -> Assessment:
+    flags = 0
+    if score.move_cost_usd < 100:
+        flags |= FLAG_THIN
+    if score.exhausted:
+        flags |= FLAG_EXHAUSTED
+    if score.last_trade_ts is None or score.ts - score.last_trade_ts > 24 * 3600:
+        flags |= FLAG_NO_RECENT_TRADE
+    if (score.spread_c or 0) > 10:
+        flags |= FLAG_WIDE_SPREAD
+    if score.mid_c is None:
+        flags |= FLAG_ONE_SIDED
+    return Assessment(score.symbol, KIND_LIQUIDITY, score.ts, int(round((score.mid_c or 0) * 100)),
+                      int(round(score.move_cost_usd * 100)), int((score.spread_c or 0) * 100),
+                      GRADES.index(score.grade), flags)
+
+
+def assessment_from_check(result: dict) -> Assessment:
+    flags = 0
+    if result["violations"]:
+        flags |= FLAG_INCONSISTENT
+    if result["opportunities"]:
+        flags |= FLAG_INCONSISTENT_EXECUTABLE | FLAG_INCONSISTENT
+    if result["status"] == "stale":
+        flags |= FLAG_UNSYNCED
+    if not result["verified"]:
+        flags |= FLAG_UNVERIFIED_RELATION
+    return Assessment(f"relation:{result['relation_id']}", KIND_CONSISTENCY, result["ts"],
+                      min(65535, int(round(result["gap_c"] * 100))), 0, 0, CHECK_GRADE[result["status"]], flags)
+
+
+def encode_record_receipt(a: Assessment, snap_hash_hex: str, uri: str) -> bytes:
     """Matches `record_receipt(args: ReceiptArgs)` in programs/odds_receipt/src/lib.rs."""
-    if len(uri) > 100:
+    if len(uri.encode()) > 100:
         raise ValueError("uri must be <= 100 bytes")
-    mid = score.mid_c if score.mid_c is not None else 0
     return (
         anchor_discriminator("record_receipt")
-        + struct.pack("<q", score.ts)
-        + struct.pack("<H", int(round(mid * 100)))  # price in basis points (cents * 100)
-        + struct.pack("<Q", int(round(score.move_cost_usd * 100)))  # move cost in cents
-        + struct.pack("<H", int((score.spread_c or 0) * 100))  # spread in basis points
-        + struct.pack("<B", GRADES.index(score.grade))  # 0=A ... 4=F
+        + struct.pack("<q", a.ts)
+        + struct.pack("<B", a.kind)
+        + struct.pack("<H", a.price_bps)
+        + struct.pack("<Q", a.move_cost_cents)
+        + struct.pack("<H", a.spread_bps)
+        + struct.pack("<B", a.grade)
+        + struct.pack("<I", a.flags)
         + bytes.fromhex(snap_hash_hex)
         + _borsh_string(uri)
     )
@@ -153,20 +244,20 @@ class ReceiptMinter:
     def _account_exists(self, pubkey) -> bool:
         return self._rpc("getAccountInfo", [str(pubkey), {"encoding": "base64"}])["value"] is not None
 
-    def mint(self, score: Score, snap_hash_hex: str, uri: str) -> dict:
+    def mint(self, a: Assessment, snap_hash_hex: str, uri: str) -> dict:
         from solders.instruction import AccountMeta
         from solders.system_program import ID as SYSTEM_PROGRAM_ID
 
-        p = self.pdas(score.symbol, score.ts)
+        p = self.pdas(a.subject, a.ts)
         me = self.authority.pubkey()
         if not self._account_exists(p["market"]):
-            self._send(encode_init_market(score.symbol), [
+            self._send(encode_init_market(a.subject), [
                 AccountMeta(me, True, True),
                 AccountMeta(p["market"], False, True),
                 AccountMeta(p["latest"], False, True),
                 AccountMeta(SYSTEM_PROGRAM_ID, False, False),
             ])
-        sig = self._send(encode_record_receipt(score, snap_hash_hex, uri), [
+        sig = self._send(encode_record_receipt(a, snap_hash_hex, uri), [
             AccountMeta(me, True, True),
             AccountMeta(p["market"], False, False),
             AccountMeta(p["receipt"], False, True),

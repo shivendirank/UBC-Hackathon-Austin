@@ -1,8 +1,8 @@
 import hashlib
 
 from thin_ice.receipts import (
-    anchor_discriminator, canonical_bytes, encode_record_receipt, make_snapshot, market_id,
-    rescore, snapshot_hash,
+    FLAG_EXHAUSTED, FLAG_THIN, KIND_LIQUIDITY, anchor_discriminator, assessment_from_check,
+    assessment_from_score, canonical_bytes, encode_record_receipt, make_snapshot, market_id, rescore, snapshot_hash,
 )
 from thin_ice.scoring import cost_down, cost_up, event_grade, parse_levels, score_book, unusual_move
 
@@ -95,8 +95,18 @@ def test_snapshot_roundtrip_is_deterministic():
 
 def test_record_receipt_encoding_layout():
     s = score_book("X", [lv(0.30, 20)], [lv(0.32, 20)], now=NOW, last_trade_ts=FRESH)
-    data = encode_record_receipt(s, "ab" * 32, "https://x/y.json")
+    a = assessment_from_score(s)
+    assert a.kind == KIND_LIQUIDITY and a.grade == 4 and a.flags & FLAG_THIN and a.flags & FLAG_EXHAUSTED
+    data = encode_record_receipt(a, "ab" * 32, "https://x/y.json")
     assert data[:8] == anchor_discriminator("record_receipt")
-    # 8 disc + 8 ts + 2 price + 8 cost + 2 spread + 1 grade + 32 hash + 4 len + uri
-    assert len(data) == 8 + 8 + 2 + 8 + 2 + 1 + 32 + 4 + len("https://x/y.json")
+    # 8 disc + 8 ts + 1 kind + 2 price + 8 cost + 2 spread + 1 grade + 4 flags + 32 hash + 4 len + uri
+    assert len(data) == 8 + 8 + 1 + 2 + 8 + 2 + 1 + 4 + 32 + 4 + len("https://x/y.json")
+    assert data[16] == KIND_LIQUIDITY and data[29] == 4  # kind byte, grade byte
     assert len(market_id("X")) == 32
+
+
+def test_consistency_assessment():
+    a = assessment_from_check({"relation_id": "ladder:T", "ts": NOW, "status": "executable", "gap_c": 10.0,
+                               "violations": [{}], "opportunities": [{}], "verified": True})
+    assert a.subject == "relation:ladder:T" and a.grade == 4 and a.price_bps == 1000
+    assert a.flags == (1 << 5) | (1 << 6)

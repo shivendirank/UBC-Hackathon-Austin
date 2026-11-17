@@ -13,7 +13,7 @@ from pathlib import Path
 
 import httpx
 
-from .receipts import rescore, snapshot_hash
+from .receipts import recheck_snapshot, rescore, snapshot_hash
 
 
 def main() -> int:
@@ -29,6 +29,15 @@ def main() -> int:
         snap = json.loads(Path(args.snapshot).read_text())
 
     h = snapshot_hash(snap)
+    if snap.get("type") == "consistency":
+        r = recheck_snapshot(snap)
+        print(f"relation    {r['relation_id']} ({r['kind']})")
+        print(f"sha256      {h}")
+        print(f"status      {r['status']}  (gap {r['gap_c']} cents)")
+        print(f"            {r['summary']}")
+        ok = not args.expect_hash or args.expect_hash == h
+        print("verified" if ok else f"HASH MISMATCH: expected {args.expect_hash}")
+        return 0 if ok else 1
     score = rescore(snap)
     expect_hash = args.expect_hash or (Path(args.snapshot).stem if len(Path(args.snapshot).stem) == 64 else None)
     print(f"market      {snap['symbol']}")

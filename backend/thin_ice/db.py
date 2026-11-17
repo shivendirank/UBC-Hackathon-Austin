@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     symbol TEXT PRIMARY KEY,
     event_ticker TEXT, event_title TEXT, event_slug TEXT, event_type TEXT,
     label TEXT, category TEXT, quantity_minimum REAL DEFAULT 1,
-    expiry TEXT, updated_at INTEGER
+    expiry TEXT, updated_at INTEGER, terms_url TEXT, rules_text TEXT
 );
 CREATE TABLE IF NOT EXISTS snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,6 +42,27 @@ CREATE TABLE IF NOT EXISTS receipts (
     symbol TEXT NOT NULL, ts INTEGER NOT NULL, grade TEXT NOT NULL,
     snapshot_hash TEXT NOT NULL, uri TEXT, tx_sig TEXT, receipt_pda TEXT, reason TEXT
 );
+CREATE TABLE IF NOT EXISTS relations (
+    id TEXT PRIMARY KEY, kind TEXT NOT NULL, members_json TEXT NOT NULL, source TEXT NOT NULL,
+    verified INTEGER NOT NULL, event_ticker TEXT, note TEXT, updated_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS consistency_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    relation_id TEXT NOT NULL, ts INTEGER NOT NULL, status TEXT NOT NULL, gap_c REAL,
+    result_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS checks_relation_ts ON consistency_checks(relation_id, ts);
+CREATE TABLE IF NOT EXISTS incidents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,            -- "inconsistency" | "unusual_move" | "liquidity_drop"
+    subject TEXT NOT NULL,         -- relation id or instrument symbol
+    status TEXT NOT NULL,          -- open | investigating | resolved
+    conclusion TEXT,               -- confirmed_inconsistency | stale_data | different_rules | inconclusive | no_issue
+    opened_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    evidence_json TEXT NOT NULL,   -- deterministic engine output at open time
+    timeline_json TEXT NOT NULL,   -- [{ts, event, detail}]
+    report_json TEXT               -- Grok Bot's report
+);
 CREATE TABLE IF NOT EXISTS alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol TEXT NOT NULL, ts INTEGER NOT NULL, kind TEXT NOT NULL, detail_json TEXT NOT NULL
@@ -56,7 +77,32 @@ def connect(path: Optional[Path] = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
+    for col in ("terms_url TEXT", "rules_text TEXT"):  # columns added after Nov 17
+        try:
+            conn.execute(f"ALTER TABLE contracts ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
     return conn
+
+
+def _flatten_rules(desc) -> str:
+    """Gemini contract descriptions are rich-text trees; keep only the text."""
+    if isinstance(desc, str):
+        return desc
+    out: list[str] = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if isinstance(node.get("value"), str):
+                out.append(node["value"])
+            for child in node.get("content", []) or []:
+                walk(child)
+        elif isinstance(node, list):
+            for child in node:
+                walk(child)
+
+    walk(desc)
+    return " ".join(out).strip()
 
 
 @contextmanager
@@ -72,15 +118,18 @@ def tx(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 def upsert_contract(conn, event: dict, contract: dict, now: int) -> None:
     conn.execute(
         """INSERT INTO contracts(symbol, event_ticker, event_title, event_slug, event_type, label,
-               category, quantity_minimum, expiry, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?)
+               category, quantity_minimum, expiry, updated_at, terms_url, rules_text)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(symbol) DO UPDATE SET event_title=excluded.event_title, label=excluded.label,
                category=excluded.category, quantity_minimum=excluded.quantity_minimum,
-               expiry=excluded.expiry, updated_at=excluded.updated_at""",
+               expiry=excluded.expiry, updated_at=excluded.updated_at,
+               terms_url=excluded.terms_url, rules_text=excluded.rules_text""",
         (
             contract["instrumentSymbol"], event.get("ticker"), event.get("title"), event.get("slug"),
             event.get("type"), contract.get("label"), event.get("category"),
             float(contract.get("quantityMinimum") or 1), contract.get("expiryDate"), now,
+            contract.get("termsAndConditionsUrl") or event.get("termsLink"),
+            _flatten_rules(contract.get("description"))[:4000],
         ),
     )
 

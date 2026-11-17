@@ -62,7 +62,84 @@ export type Receipt = {
 
 export type Alert = { id: number; symbol: string; ts: number; kind: string; detail: Record<string, unknown> };
 
+export type Fill = {
+  side: "buy_yes" | "sell_yes";
+  target_usd: number;
+  filled_usd: number;
+  contracts: number;
+  avg_price_c: number | null;
+  worst_price_c: number | null;
+  slippage_c: number | null;
+  complete: boolean;
+};
+
+export type Liquidity = {
+  fills: Fill[];
+  depth: Record<string, number>;
+  levels: { bids: number; asks: number };
+  summary: string;
+};
+
+export type Resilience = {
+  samples: number;
+  observed_s?: number;
+  share_thin: number | null;
+  longest_thin_s: number | null;
+  around_moves: { ts: number; from_c: number; to_c: number; move_cost_before: number; move_cost_after: number }[];
+};
+
+export type CheckStatus = "coherent" | "theoretical_only" | "executable" | "stale" | "insufficient_data";
+
+export type CheckResult = {
+  relation_id: string;
+  kind: string;
+  verified: boolean;
+  ts: number;
+  status: CheckStatus;
+  summary: string;
+  prices_c: Record<string, number | null>;
+  coherent_c: Record<string, number>;
+  gap_c: number;
+  violations: Record<string, unknown>[];
+  opportunities: Record<string, unknown>[];
+  max_skew_s: number;
+  excluded: string[];
+};
+
+export type Relation = {
+  id: string;
+  kind: string;
+  members: string[];
+  source: string;
+  verified: boolean;
+  event_ticker: string | null;
+  note: string;
+  latest_check: CheckResult | null;
+};
+
+export type Incident = {
+  id: number;
+  kind: "inconsistency" | "unusual_move" | "liquidity_drop";
+  subject: string;
+  status: "open" | "reported" | "resolved";
+  conclusion: string | null;
+  opened_at: number;
+  updated_at: number;
+  evidence: Record<string, unknown>;
+  timeline: { ts: number; event: string; detail: Record<string, unknown> }[];
+  report: { conclusion: string; summary: string; sources: string[]; details: string; author: string; ts: number } | null;
+};
+
+export type IncidentDetail = Incident & {
+  relation?: { id: string; kind: string; members: string[]; verified: number } | null;
+  latest_check?: CheckResult | null;
+  contracts: { symbol: string; event_title: string; label: string; expiry: string; terms_url: string | null }[];
+};
+
 export type MarketDetail = Market & {
+  liquidity: Liquidity | null;
+  resilience: Resilience;
+  relations: { id: string; kind: string; verified: number }[];
   history: HistoryPoint[];
   receipts: Receipt[];
   alerts: Alert[];
@@ -85,6 +162,11 @@ async function get<T>(path: string): Promise<T | null> {
 export const getMarkets = (category?: string) =>
   get<{ markets: Market[] }>(`/api/markets${category ? `?category=${encodeURIComponent(category)}` : ""}`);
 export const getMarket = (symbol: string) => get<MarketDetail>(`/api/markets/${encodeURIComponent(symbol)}`);
+
+export const getIncidents = (status?: string) =>
+  get<{ incidents: Incident[] }>(`/api/incidents${status ? `?status=${status}` : ""}`);
+export const getIncident = (id: string) => get<IncidentDetail>(`/api/incidents/${encodeURIComponent(id)}`);
+export const getRelations = () => get<{ relations: Relation[] }>("/api/relations");
 
 export const usd = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: n < 100 ? 2 : 0 });

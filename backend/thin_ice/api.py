@@ -9,10 +9,11 @@ import json
 from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Query
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import config, db, service
+from . import config, db, incidents, service
 
 app = FastAPI(title="Thin Ice", version="0.1.0",
               description="How much would it cost to move these odds? Live grades for Gemini prediction markets.")
@@ -50,10 +51,14 @@ def grade(q: str):
     return service.get_market(conn, symbol, history_hours=24)
 
 
+def _admin(token: str) -> None:
+    if not config.ADMIN_TOKEN or token != config.ADMIN_TOKEN:
+        raise HTTPException(401, "X-Admin-Token required")
+
+
 @app.post("/api/markets/{symbol}/receipt")
 def mint(symbol: str, x_admin_token: str = Header("")):
-    if not config.ADMIN_TOKEN or x_admin_token != config.ADMIN_TOKEN:
-        raise HTTPException(401, "X-Admin-Token required")
+    _admin(x_admin_token)
     try:
         return service.mint_receipt(conn, symbol)
     except LookupError:
@@ -78,3 +83,59 @@ def snapshot(name: str):
     if not path.exists():
         raise HTTPException(404)
     return FileResponse(path, media_type="application/json")
+
+
+# ---------- consistency + incidents ----------
+
+@app.get("/api/relations")
+def list_relations(verified_only: bool = False):
+    """The relationship graph, each with its latest consistency check."""
+    out = []
+    for r in incidents.relations(conn, verified_only=verified_only):
+        row = conn.execute("SELECT result_json FROM consistency_checks WHERE relation_id=? ORDER BY id DESC LIMIT 1",
+                           (r.id,)).fetchone()
+        out.append({**r.to_dict(), "latest_check": json.loads(row["result_json"]) if row else None})
+    return {"relations": out}
+
+
+@app.get("/api/incidents")
+def list_incidents(status: Optional[str] = Query(None, pattern="^(open|reported|resolved)$"),
+                   limit: int = Query(50, le=200)):
+    return {"incidents": incidents.list_incidents(conn, status, limit)}
+
+
+@app.get("/api/incidents/{incident_id}")
+def incident(incident_id: int):
+    inc = incidents.get_incident(conn, incident_id)
+    if not inc:
+        raise HTTPException(404)
+    return inc
+
+
+class Report(BaseModel):
+    conclusion: str
+    summary: str
+    sources: list[str] = []
+    details: str = ""
+
+
+@app.post("/api/incidents/{incident_id}/report")
+def report(incident_id: int, body: Report, x_admin_token: str = Header("")):
+    """Grok Bot (or a person) files the investigation result."""
+    _admin(x_admin_token)
+    if not incidents.get_incident(conn, incident_id):
+        raise HTTPException(404)
+    try:
+        return incidents.submit_report(conn, incident_id, body.conclusion, body.summary, body.sources, body.details)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@app.post("/api/relations/{relation_id}/assessment")
+def publish_assessment(relation_id: str, x_admin_token: str = Header("")):
+    """Pin + record a consistency assessment (call for significant, confirmed findings)."""
+    _admin(x_admin_token)
+    try:
+        return service.mint_consistency(conn, relation_id)
+    except LookupError:
+        raise HTTPException(404)

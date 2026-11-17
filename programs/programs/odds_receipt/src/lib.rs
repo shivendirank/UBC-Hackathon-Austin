@@ -1,5 +1,8 @@
-//! odds_receipt: tamper-proof, timestamped receipts of how much it cost to move a
-//! Gemini prediction market's odds, plus a `Latest` account other programs can read.
+//! odds_receipt: tamper-proof, timestamped risk assessments for Gemini prediction markets, plus a
+//! `Latest` account other programs can read. Two kinds share one layout:
+//!   KIND_LIQUIDITY   subject = instrument symbol; grade from the cost to move the odds 10 cents
+//!   KIND_CONSISTENCY subject = "relation:<id>"; grade from the cross-contract consistency check
+//! `flags` carries the specific risks (thin, exhausted, inconsistent, unsynced, ...).
 //!
 //! Proof chain: `snapshot_hash` = sha256 of the pinned order-book JSON at `uri`. Anyone can
 //! download it, re-hash it and re-run the open formula (backend/thin_ice/scoring.py).
@@ -14,6 +17,20 @@ pub const MAX_SYMBOL: usize = 64;
 pub const MAX_URI: usize = 100;
 /// Grades are stored as 0=A, 1=B, 2=C, 3=D, 4=F.
 pub const GRADE_F: u8 = 4;
+
+pub const KIND_LIQUIDITY: u8 = 0;
+pub const KIND_CONSISTENCY: u8 = 1;
+
+// Risk flags (bitmask). Keep in sync with backend/thin_ice/receipts.py.
+pub const FLAG_THIN: u32 = 1 << 0;
+pub const FLAG_EXHAUSTED: u32 = 1 << 1;
+pub const FLAG_NO_RECENT_TRADE: u32 = 1 << 2;
+pub const FLAG_WIDE_SPREAD: u32 = 1 << 3;
+pub const FLAG_ONE_SIDED: u32 = 1 << 4;
+pub const FLAG_INCONSISTENT: u32 = 1 << 5;
+pub const FLAG_INCONSISTENT_EXECUTABLE: u32 = 1 << 6;
+pub const FLAG_UNSYNCED: u32 = 1 << 7;
+pub const FLAG_UNVERIFIED_RELATION: u32 = 1 << 8;
 
 #[program]
 pub mod odds_receipt {
@@ -38,6 +55,7 @@ pub mod odds_receipt {
     /// Writes a new immutable `Receipt` and updates `Latest`. Authority only.
     pub fn record_receipt(ctx: Context<RecordReceipt>, args: ReceiptArgs) -> Result<()> {
         require!(args.grade <= GRADE_F, ReceiptError::BadGrade);
+        require!(args.kind <= KIND_CONSISTENCY, ReceiptError::BadKind);
         require!(args.uri.len() <= MAX_URI, ReceiptError::UriTooLong);
         let latest = &mut ctx.accounts.latest;
         require!(args.ts > latest.ts, ReceiptError::NotNewer);
@@ -46,6 +64,8 @@ pub mod odds_receipt {
         let receipt = &mut ctx.accounts.receipt;
         receipt.market_id = market_id;
         receipt.ts = args.ts;
+        receipt.kind = args.kind;
+        receipt.flags = args.flags;
         receipt.price_bps = args.price_bps;
         receipt.move_cost_cents = args.move_cost_cents;
         receipt.spread_bps = args.spread_bps;
@@ -56,6 +76,8 @@ pub mod odds_receipt {
         receipt.bump = ctx.bumps.receipt;
 
         latest.ts = args.ts;
+        latest.kind = args.kind;
+        latest.flags = args.flags;
         latest.price_bps = args.price_bps;
         latest.move_cost_cents = args.move_cost_cents;
         latest.spread_bps = args.spread_bps;
@@ -66,7 +88,9 @@ pub mod odds_receipt {
         emit!(ReceiptRecorded {
             market_id,
             ts: args.ts,
+            kind: args.kind,
             grade: args.grade,
+            flags: args.flags,
             move_cost_cents: args.move_cost_cents,
             receipt: receipt.key(),
         });
@@ -82,10 +106,12 @@ pub mod odds_receipt {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ReceiptArgs {
     pub ts: i64,
+    pub kind: u8,
     pub price_bps: u16,
     pub move_cost_cents: u64,
     pub spread_bps: u16,
     pub grade: u8,
+    pub flags: u32,
     pub snapshot_hash: [u8; 32],
     pub uri: String,
 }
@@ -155,6 +181,8 @@ pub struct Latest {
     pub move_cost_cents: u64,
     pub spread_bps: u16,
     pub grade: u8,
+    pub kind: u8,
+    pub flags: u32,
     pub snapshot_hash: [u8; 32],
     pub receipt: Pubkey,
     pub bump: u8,
@@ -169,6 +197,8 @@ pub struct Receipt {
     pub move_cost_cents: u64,
     pub spread_bps: u16,
     pub grade: u8,
+    pub kind: u8,
+    pub flags: u32,
     pub snapshot_hash: [u8; 32],
     #[max_len(100)]
     pub uri: String,
@@ -180,7 +210,9 @@ pub struct Receipt {
 pub struct ReceiptRecorded {
     pub market_id: [u8; 32],
     pub ts: i64,
+    pub kind: u8,
     pub grade: u8,
+    pub flags: u32,
     pub move_cost_cents: u64,
     pub receipt: Pubkey,
 }
@@ -193,6 +225,8 @@ pub enum ReceiptError {
     UriTooLong,
     #[msg("grade must be 0 (A) to 4 (F)")]
     BadGrade,
+    #[msg("unknown assessment kind")]
+    BadKind,
     #[msg("receipt timestamp must be newer than the latest one")]
     NotNewer,
     #[msg("receipt belongs to a different market")]

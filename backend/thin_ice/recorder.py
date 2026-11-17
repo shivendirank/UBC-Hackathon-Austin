@@ -13,7 +13,8 @@ import argparse
 import logging
 import time
 
-from . import config, db
+from . import config, db, incidents
+from .consistency import suggest_relations
 from .gemini import Gemini, open_contracts
 from .receipts import make_snapshot, snapshot_hash
 from .scoring import score_book, unusual_move
@@ -25,15 +26,22 @@ def discover(client: Gemini, conn, limit: int) -> list[str]:
     """Refresh the contracts table and return the watchlist (demo symbols first)."""
     now = int(time.time())
     symbols: list[str] = list(config.DEMO_SYMBOLS)
+    events: list[dict] = []
     with db.tx(conn):
         for category in config.CATEGORIES:
             for event in client.events(category=category):
+                events.append(event)
                 for contract in open_contracts(event):
                     db.upsert_contract(conn, event, contract, now)
                     if contract["instrumentSymbol"] not in symbols:
                         symbols.append(contract["instrumentSymbol"])
-    log.info("discovered %d open contracts", len(symbols))
-    return symbols[:limit]
+    rels = suggest_relations(events)
+    incidents.sync_relations(conn, rels)
+    log.info("discovered %d open contracts, %d relations", len(symbols), len(rels))
+    # Members of verified relations go to the front so their books are recorded close together.
+    related = [s for r in incidents.relations(conn, verified_only=True) for s in r.members if s in symbols]
+    ordered = list(dict.fromkeys(list(config.DEMO_SYMBOLS) + related + symbols))
+    return ordered[:limit]
 
 
 def record_one(client: Gemini, conn, symbol: str) -> dict:
@@ -57,6 +65,8 @@ def record_one(client: Gemini, conn, symbol: str) -> dict:
         move = unusual_move(recent, score.move_cost_usd)
         if move:
             db.insert_alert(conn, symbol, now, "unusual_move", move)
+    if move:
+        incidents.open_move_incident(conn, symbol, move, now)
     return {"symbol": symbol, "grade": score.grade, "move_cost_usd": score.move_cost_usd}
 
 
@@ -77,6 +87,9 @@ def run(once: bool, limit: int) -> None:
                     log.warning("%s: %s", symbol, exc)
                 if time.time() >= next_discovery and not once:
                     break
+            checks = incidents.run_checks(conn)
+            flagged = [c for c in checks if c["status"] not in ("coherent", "insufficient_data")]
+            log.info("consistency: %d relations checked, %d flagged", len(checks), len(flagged))
             if once:
                 return
     finally:

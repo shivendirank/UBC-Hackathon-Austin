@@ -65,8 +65,15 @@ def get_market(conn, symbol: str, history_hours: int = 72) -> Optional[dict]:
         "SELECT id, symbol, ts, kind, detail_json FROM alerts WHERE symbol=? ORDER BY ts DESC LIMIT 20",
         (symbol,)).fetchall()]
     snap = conn.execute("SELECT snapshot_hash FROM snapshots WHERE id=?", (row["snapshot_id"],)).fetchone()
+    from .liquidity import book_report, resilience
+
+    snap_row = conn.execute("SELECT bids_json, asks_json FROM snapshots WHERE id=?", (row["snapshot_id"],)).fetchone()
+    liquidity = book_report(json.loads(snap_row["bids_json"]), json.loads(snap_row["asks_json"])) if snap_row else None
+    related = [dict(r) for r in conn.execute(
+        "SELECT id, kind, verified FROM relations WHERE members_json LIKE ?", (f'%"{symbol}"%',)).fetchall()]
     out = _row_to_market(row)
-    out.update(history=history, receipts=receipts, alerts=alerts,
+    out.update(liquidity=liquidity, resilience=resilience(history), relations=related,
+               history=history, receipts=receipts, alerts=alerts,
                snapshot_hash=snap["snapshot_hash"] if snap else None)
     return out
 
@@ -120,7 +127,7 @@ def latest_snapshot(conn, symbol: str) -> Optional[dict]:
 
 def mint_receipt(conn, symbol: str, reason: str = "on_demand") -> dict:
     """Pin the latest snapshot and record it on Solana (if configured; otherwise pin only)."""
-    from .receipts import ReceiptMinter, rescore
+    from .receipts import ReceiptMinter, assessment_from_score, rescore
 
     latest = latest_snapshot(conn, symbol)
     if not latest:
@@ -131,7 +138,7 @@ def mint_receipt(conn, symbol: str, reason: str = "on_demand") -> dict:
     score = rescore(snap)  # grade exactly what we pinned
     onchain: dict = {}
     if config.ODDS_RECEIPT_PROGRAM_ID and config.RECEIPT_AUTHORITY_KEYPAIR:
-        onchain = ReceiptMinter().mint(score, h, uri)
+        onchain = ReceiptMinter().mint(assessment_from_score(score), h, uri)
     with db.tx(conn):
         conn.execute(
             "INSERT INTO receipts(symbol, ts, grade, snapshot_hash, uri, tx_sig, receipt_pda, reason) "
@@ -142,4 +149,40 @@ def mint_receipt(conn, symbol: str, reason: str = "on_demand") -> dict:
         out["explorer_url"] = explorer_url("tx", onchain["tx_sig"])
     else:
         out["note"] = "Pinned only: set ODDS_RECEIPT_PROGRAM_ID and RECEIPT_AUTHORITY_KEYPAIR to record onchain."
+    return out
+
+
+def mint_consistency(conn, relation_id: str, reason: str = "incident") -> dict:
+    """Pin the latest books for a relation, re-run the check on exactly those books, and record it."""
+    from . import incidents
+    from .receipts import (ReceiptMinter, assessment_from_check, make_consistency_snapshot,
+                           recheck_snapshot)
+
+    rel = next((r for r in incidents.relations(conn) if r.id == relation_id), None)
+    if not rel:
+        raise LookupError(relation_id)
+    raw = {}
+    for s in rel.members:
+        row = conn.execute("SELECT ts, bids_json, asks_json FROM snapshots WHERE symbol=? ORDER BY id DESC LIMIT 1",
+                           (s,)).fetchone()
+        if row:
+            raw[s] = {"ts": row["ts"], "bids": json.loads(row["bids_json"]), "asks": json.loads(row["asks_json"])}
+    snap = make_consistency_snapshot(rel.to_dict(), raw, int(time.time()),
+                                     config.FEE_CENTS_PER_CONTRACT, config.SYNC_TOLERANCE_S)
+    result = recheck_snapshot(snap)
+    h, _ = pin_snapshot(snap)
+    uri = f"{config.SNAPSHOT_BASE_URI}/{h}.json"[:100]
+    a = assessment_from_check(result)
+    onchain: dict = {}
+    if config.ODDS_RECEIPT_PROGRAM_ID and config.RECEIPT_AUTHORITY_KEYPAIR:
+        onchain = ReceiptMinter().mint(a, h, uri)
+    with db.tx(conn):
+        conn.execute(
+            "INSERT INTO receipts(symbol, ts, grade, snapshot_hash, uri, tx_sig, receipt_pda, reason) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (a.subject, a.ts, "ABCDF"[a.grade], h, uri, onchain.get("tx_sig"), onchain.get("receipt_pda"), reason))
+    out = {"subject": a.subject, "status": result["status"], "flags": a.flags, "snapshot_hash": h, "uri": uri,
+           **onchain}
+    if onchain.get("tx_sig"):
+        out["explorer_url"] = explorer_url("tx", onchain["tx_sig"])
     return out

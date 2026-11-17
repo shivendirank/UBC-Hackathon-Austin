@@ -2,8 +2,16 @@
 
 - `odds_receipt`: `init_market`, `record_receipt` (authority only), `close_old`. Accounts:
   `Market` `["market", market_id]`, `Latest` `["latest", market_id]`,
-  `Receipt` `["receipt", market_id, ts_le_bytes]`. `market_id = sha256(instrument symbol)`.
-- `safe_payout`: demo consumer; `settle` fails with `ThinIce` when `Latest.grade` is worse than C.
+  `Receipt` `["receipt", market_id, ts_le_bytes]`. `market_id = sha256(subject)`, where subject is an
+  instrument symbol (liquidity assessment) or `relation:<id>` (consistency assessment).
+  Each receipt has `kind` (0 liquidity, 1 consistency), `grade` (0=A..4=F) and a `flags` bitmask
+  (thin, exhausted, no recent trade, wide spread, one-sided, inconsistent, inconsistent at executable
+  prices, unsynced books, unverified relation).
+- `safe_payout`: demo consumer. `settle(trusted_authority, max_age_s)` pauses (fails) when the
+  assessment isn't from the trusted signer, is too old, grades worse than C, or carries a blocking flag.
+
+Trust assumption: a receipt proves what Thin Ice committed and when, not that Gemini's data was
+complete. Anyone can create a `Market` for a subject, so consumers must pin the authority they trust.
 
 Not compiled yet (no Rust toolchain on the Mac it was written on). First build:
 
