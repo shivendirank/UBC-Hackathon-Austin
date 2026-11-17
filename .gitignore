@@ -1,0 +1,20 @@
+# secrets
+.env
+.env.local
+*.keypair.json
+id.json
+# python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+backend/data/
+# node
+node_modules/
+web/.next/
+web/next-env.d.ts
+# anchor / rust
+programs/target/
+programs/.anchor/
+programs/test-ledger/
+.DS_Store
