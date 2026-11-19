@@ -4,8 +4,8 @@ import { bookStatus } from "@/lib/status";
 /**
  * Display rules on top of the existing formula. They do not change grades or receipts.
  * A book older than 30 minutes is not treated as a current assessment.
- * Healthy liquidity means grade A, B, or C in scoring.py: a 10¢ move costs at least $1,000
- * and the visible orders do not run out first.
+ * Healthy liquidity means grade A, B, or C in scoring.py: a large share of this market's
+ * own visible depth sits in the 10¢ move window (and the book does not run out first).
  */
 export const BOOK_FRESH_S = 30 * 60;
 
@@ -41,6 +41,17 @@ export function inconsistentSymbols(relations: Relation[]): Set<string> {
     }
   }
   return out;
+}
+
+/** Best verified relation that includes this symbol, preferring a broken check. */
+export function relatedCheck(relations: Relation[], symbol: string): Relation | null {
+  const hits = relations.filter((r) => r.verified && r.members.includes(symbol));
+  if (hits.length === 0) return null;
+  const broken = hits.find((r) => {
+    const s = r.latest_check?.status;
+    return s === "executable" || s === "theoretical_only";
+  });
+  return broken ?? hits[0];
 }
 
 export function assess(market: Market, inconsistent = false): Verdict {
@@ -82,7 +93,7 @@ export function assess(market: Market, inconsistent = false): Verdict {
     return {
       kind: "healthy",
       title: TITLE.healthy,
-      reason: "The visible orders can move this price by 10¢, and that move costs at least $1,000. That is Thin Ice's current bar for healthy liquidity. It is not a forecast.",
+      reason: "A large share of this market's own visible depth sits inside a 10¢ move, so the displayed price is relatively hard to shove with the size that is on the book. That is Thin Ice's current bar for healthy liquidity. It is not a forecast.",
       evidence: [observed, trade, `Spread ${market.spread_c ?? "—"}¢.`],
       action: "Understand this market",
       href,
@@ -90,12 +101,15 @@ export function assess(market: Market, inconsistent = false): Verdict {
   }
 
   const ranOut = status === "Runs out";
+  const depthPct = market.score.depth_pct;
+  const depthBit =
+    depthPct != null ? ` About ${Math.round(depthPct)}% of the cheaper side sits in that 10¢ window.` : "";
   return {
     kind: "fragile",
     title: TITLE.fragile,
     reason: ranOut
       ? "Few orders are available near the current price. The visible book runs out before the odds can move 10¢, so a larger trade can change the price you actually get."
-      : "The book can move 10¢, but it takes under $1,000 or the spread is wide. That is below Thin Ice's current bar for healthy liquidity.",
+      : `Relative to this market's own book, too little depth sits behind a 10¢ move, or the spread is wide.${depthBit} That is below Thin Ice's current bar for healthy liquidity.`,
     evidence: [observed, trade, `Spread ${market.spread_c ?? "—"}¢.`],
     action: "Understand this market",
     href,

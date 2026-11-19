@@ -119,7 +119,7 @@ def encode_init_market(symbol: str) -> bytes:
 KIND_LIQUIDITY = 0
 KIND_CONSISTENCY = 1
 
-FLAG_THIN = 1 << 0                      # moves 10 cents for under $100
+FLAG_THIN = 1 << 0                      # relative depth grade D/F (or legacy move_cost < $100)
 FLAG_EXHAUSTED = 1 << 1                 # visible book runs out before a 10-cent move
 FLAG_NO_RECENT_TRADE = 1 << 2           # no trade in 24 h
 FLAG_WIDE_SPREAD = 1 << 3               # spread over 10 cents
@@ -147,7 +147,7 @@ class Assessment:
 
 def assessment_from_score(score: Score) -> Assessment:
     flags = 0
-    if score.move_cost_usd < 100:
+    if score.grade in ("D", "F") or score.move_cost_usd < 100:
         flags |= FLAG_THIN
     if score.exhausted:
         flags |= FLAG_EXHAUSTED

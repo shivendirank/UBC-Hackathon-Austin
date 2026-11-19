@@ -1,14 +1,15 @@
 import type { CheckStatus } from "@/lib/api";
 
 const STYLE: Record<string, { cls: string; word: string }> = {
-  coherent: { cls: "bg-emerald-600 text-white", word: "Consistent" },
-  theoretical_only: { cls: "bg-amber-400 text-black", word: "Inconsistent on paper" },
-  executable: { cls: "bg-red-600 text-white", word: "Inconsistent at real prices" },
-  stale: { cls: "bg-neutral-400 text-black", word: "Out-of-sync quotes" },
-  insufficient_data: { cls: "bg-neutral-300 text-black", word: "Not enough data" },
-  open: { cls: "bg-red-600 text-white", word: "Open" },
-  reported: { cls: "bg-sky-600 text-white", word: "Investigated" },
-  resolved: { cls: "bg-emerald-600 text-white", word: "Resolved" },
+  coherent: { cls: "bg-[#12382c] text-[#8ee0b0]", word: "Consistent" },
+  theoretical_only: { cls: "bg-[#3a2c12] text-[#ffc46b]", word: "Inconsistent on paper" },
+  executable: { cls: "bg-[#3a1c24] text-[#ff8b98]", word: "Inconsistent at real prices" },
+  stale: { cls: "bg-[#232830] text-[#c5ced6]", word: "Out-of-sync quotes" },
+  insufficient_data: { cls: "bg-[#232830] text-[#c5ced6]", word: "Not enough data" },
+  pending: { cls: "bg-[#232830] text-[#c5ced6]", word: "Awaiting books" },
+  open: { cls: "bg-[#3a1c24] text-[#ff8b98]", word: "Open" },
+  reported: { cls: "bg-[#1a2a3a] text-[#9aebff]", word: "Investigated" },
+  resolved: { cls: "bg-[#12382c] text-[#8ee0b0]", word: "Resolved" },
 };
 
 export function StatusPill({ status }: { status: CheckStatus | string }) {

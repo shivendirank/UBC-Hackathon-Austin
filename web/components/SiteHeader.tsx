@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Sticker } from "@/components/Stickers";
+import { clearSession, readUser, type SessionUser } from "@/lib/session";
 
 const LINKS = [
   { href: "/", label: "Markets" },
@@ -18,6 +20,25 @@ function active(path: string, href: string): boolean {
 
 export function SiteHeader() {
   const path = usePathname();
+  const [user, setUser] = useState<SessionUser | null>(null);
+
+  useEffect(() => {
+    setUser(readUser());
+  }, [path]);
+
+  if (path === "/login") {
+    return (
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#07080a]/95 backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-[1680px] items-center px-6 lg:px-8">
+          <Link href="/" className="group flex items-center gap-2.5">
+            <Sticker category={null} className="h-8 w-8" />
+            <span className="text-[13px] font-semibold uppercase tracking-[0.22em] text-white">Thin Ice</span>
+          </Link>
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#07080a]/95 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-[1680px] items-center gap-6 px-6 lg:px-8">
@@ -40,7 +61,7 @@ export function SiteHeader() {
             );
           })}
         </nav>
-        <form action="/" className="ml-auto w-40 shrink-0 sm:w-64">
+        <form action="/" className="ml-auto w-32 shrink-0 sm:w-52">
           <input
             name="q"
             placeholder="Search predictions"
@@ -48,6 +69,28 @@ export function SiteHeader() {
             className="h-9 w-full rounded-full border border-white/10 bg-[#12141a] px-4 text-sm text-white outline-none placeholder:text-[#6f7882]"
           />
         </form>
+        {user ? (
+          <div className="flex shrink-0 items-center gap-3">
+            <span className="hidden text-xs text-[#9aa3ad] sm:inline">{user.name || user.email}</span>
+            <button
+              type="button"
+              onClick={() => {
+                clearSession();
+                setUser(null);
+              }}
+              className="text-[12px] font-medium uppercase tracking-[0.16em] text-[#8b95a1] hover:text-white"
+            >
+              Log out
+            </button>
+          </div>
+        ) : (
+          <Link
+            href="/login"
+            className="shrink-0 text-[12px] font-medium uppercase tracking-[0.16em] text-white"
+          >
+            Log in
+          </Link>
+        )}
       </div>
     </header>
   );

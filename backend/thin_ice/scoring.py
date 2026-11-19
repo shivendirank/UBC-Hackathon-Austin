@@ -1,7 +1,10 @@
-"""Thin Ice scoring: how many dollars it takes to move a market's odds by 10 cents.
+"""Thin Ice scoring: how hard is it to move a market's odds by 10 cents?
 
-This file is the open formula. Anyone can re-run it on a pinned snapshot and get the same grade
-(see `verify.py`). Change FORMULA_VERSION whenever the math or the grade table changes.
+Grades are relative to each book: what share of that side's visible depth do you need
+to consume to push YES 10¢. Fixed dollar cutoffs are not used — a $40 book and a
+$40,000 book are judged on their own depth shape.
+
+Change FORMULA_VERSION whenever the math or the grade table changes.
 
 Gemini prediction books are the YES side: bids buy YES, asks sell YES. Prices are in dollars
 (0.01 to 0.99), amounts in contracts. All price math is done in integer cents to avoid float drift.
@@ -12,13 +15,20 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Iterable, Optional
 
-FORMULA_VERSION = "1"
+FORMULA_VERSION = "2"
 DELTA_CENTS = 10  # "cost to move 10 cents"
 STALE_AFTER_S = 24 * 3600
 
 GRADES = ["A", "B", "C", "D", "F"]
-# (minimum move cost in USD, grade). A also needs spread <= 3 cents.
-THRESHOLDS = [(10_000, "A"), (2_500, "B"), (1_000, "C"), (100, "D")]
+# Relative grade: share of this side's visible notional that sits inside the 10¢ move
+# window, gated by how many contracts that window actually holds.
+# (min depth_pct, min contracts in window, grade). A also needs spread <= 3¢ and not exhausted.
+DEPTH_THRESHOLDS = [
+    (80.0, 500.0, "A"),
+    (55.0, 150.0, "B"),
+    (35.0, 50.0, "C"),
+    (15.0, 25.0, "D"),
+]
 A_MAX_SPREAD_C = 3
 CAP_D_SPREAD_C = 10
 F_SPREAD_C = 20
@@ -67,6 +77,36 @@ def cost_down(bids: list[Level]) -> tuple[float, bool]:
     return cost, True
 
 
+def side_notional_usd(levels: list[Level], *, side: str) -> float:
+    """Total visible USD on one side. asks: buy YES; bids: sell YES (= buy NO)."""
+    if side == "ask":
+        return sum(amount * price_c / 100 for price_c, amount in levels)
+    return sum(amount * (100 - price_c) / 100 for price_c, amount in levels)
+
+
+def contracts_in_move_window(levels: list[Level], *, side: str) -> float:
+    """Contracts consumed walking the 10¢ move (or the whole side if it runs out)."""
+    if not levels:
+        return 0.0
+    if side == "ask":
+        rows = sorted(levels)
+        target = rows[0][0] + DELTA_CENTS
+        total = 0.0
+        for price_c, amount in rows:
+            if price_c >= target:
+                return total
+            total += amount
+        return total
+    rows = sorted(levels, reverse=True)
+    target = rows[0][0] - DELTA_CENTS
+    total = 0.0
+    for price_c, amount in rows:
+        if price_c <= target:
+            return total
+        total += amount
+    return total
+
+
 @dataclass
 class Score:
     symbol: str
@@ -83,6 +123,7 @@ class Score:
     exhausted: bool
     last_trade_ts: Optional[int]
     spoof_cost_usd: Optional[float]
+    depth_pct: Optional[float] = None  # % of cheaper side notional inside the 10¢ window
     reasons: list[str] = field(default_factory=list)
     formula_version: str = FORMULA_VERSION
 
@@ -96,6 +137,15 @@ def _drop(grade: str, steps: int = 1) -> str:
 
 def _cap(grade: str, worst_allowed: str) -> str:
     return grade if GRADES.index(grade) >= GRADES.index(worst_allowed) else worst_allowed
+
+
+def _grade_from_depth(depth_pct: float, window_contracts: float) -> str:
+    grade = "F"
+    for min_pct, min_contracts, g in DEPTH_THRESHOLDS:
+        if depth_pct >= min_pct and window_contracts >= min_contracts:
+            grade = g
+            break
+    return grade
 
 
 def score_book(
@@ -120,7 +170,7 @@ def score_book(
             max(p for p, _ in bids) if bids else None,
             min(p for p, _ in asks) if asks else None,
             None, None, up, down, 0.0, None, True, last_trade_ts, None,
-            [f"one-sided book ({side})"],
+            None, [f"one-sided book ({side})"],
         )
 
     best_bid, best_ask = max(p for p, _ in bids), min(p for p, _ in asks)
@@ -129,21 +179,34 @@ def score_book(
     down, down_ex = cost_down(bids)
     if up <= down:
         move_cost, direction, exhausted = up, "up", up_ex
+        side_levels, side_name = asks, "ask"
     else:
         move_cost, direction, exhausted = down, "down", down_ex
+        side_levels, side_name = bids, "bid"
+
+    side_total = side_notional_usd(side_levels, side=side_name)
+    window_contracts = contracts_in_move_window(side_levels, side=side_name)
+    depth_pct = round(100.0 * move_cost / side_total, 2) if side_total > 0 else 0.0
+
     if exhausted:
         reasons.append(f"book runs out before a 10-cent move ({direction})")
 
-    grade = "F"
-    for minimum, g in THRESHOLDS:
-        if move_cost >= minimum:
-            grade = g
-            break
+    # Relative grade: % of this side inside the 10¢ window, with a contract floor per letter.
+    grade = _grade_from_depth(depth_pct, window_contracts)
+    if exhausted:
+        # Surviving a 10¢ move matters. An exhausted book cannot be A–C.
+        grade = _cap(grade, "D")
+        if window_contracts < DEPTH_THRESHOLDS[-1][1]:
+            grade = "F"
+
     if grade == "A" and spread > A_MAX_SPREAD_C:
         grade = "B"
         reasons.append(f"The buy and sell quotes are {spread}¢ apart.")
     if grade == "F":
-        reasons.append(f"moves 10 cents for ${move_cost:,.2f} (under $100)")
+        reasons.append(
+            f"10¢ move sits in {depth_pct:.0f}% of visible {direction}-side depth "
+            f"({window_contracts:.0f} contracts) — below this market's depth bar"
+        )
 
     stale = last_trade_ts is None or now - last_trade_ts > STALE_AFTER_S
     if stale and grade != "F":
@@ -175,6 +238,7 @@ def score_book(
         # One minimum-size fill at the best ask can set the "last traded" price.
         # [verify] how Gemini's own UI picks the displayed price before claiming this on stage.
         spoof_cost_usd=round(quantity_minimum * best_ask / 100, 2),
+        depth_pct=depth_pct,
         reasons=reasons,
     )
 

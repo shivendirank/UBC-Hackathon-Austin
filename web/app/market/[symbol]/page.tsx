@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { GradePill } from "@/components/GradePill";
 import { MoveCostChart, OddsChart } from "@/components/MoveCostChart";
 import { Sticker } from "@/components/Stickers";
 import { WatchButton } from "@/components/WatchButton";
 import { API_URL, getIncidents, getMarket, getMarkets, getRelations, usd } from "@/lib/api";
-import { bookIsFresh, assess, relationStory } from "@/lib/verdict";
+import { bookIsFresh, assess, relatedCheck, relationStory } from "@/lib/verdict";
 
 export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
   const { symbol } = await props.params;
@@ -13,8 +14,10 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
   const s = m.score;
   const notes = plainReasons(s.reasons);
   const synthetic = m.synthetic || m.event_title?.includes("Synthetic replay");
-  const relations = await getRelations();
-  const related = (relations?.relations ?? []).filter((r) => r.members.includes(m.symbol));
+  const relationsData = await getRelations();
+  const allRelations = relationsData?.relations ?? [];
+  const related = allRelations.filter((r) => r.members.includes(m.symbol));
+  const focusRelation = relatedCheck(allRelations, m.symbol);
   const verifiedBreak = related.find((r) => r.verified && (r.latest_check?.status === "executable" || r.latest_check?.status === "theoretical_only"));
   const verdict = assess(m, Boolean(verifiedBreak));
   const incidents = await getIncidents();
@@ -52,12 +55,25 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
               </p>
             )}
             <div className="mt-5 rounded-2xl border border-white/10 bg-[#1a1d24] px-4 py-3">
-              <span className="block text-sm font-medium text-[#d7dde4]">{m.label}</span>
-              <span className="mt-1 block text-xs text-[#8b95a1]">YES</span>
-              <span className="mt-1 block text-4xl font-semibold tabular-nums text-white">{m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"}</span>
-              <span className="mt-1 block text-sm text-[#9aa3ad]">{verdict.title}</span>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <span className="block text-sm font-medium text-[#d7dde4]">{m.label}</span>
+                  <span className="mt-1 block text-xs text-[#8b95a1]">YES</span>
+                  <span className="mt-1 block text-4xl font-semibold tabular-nums text-white">{m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"}</span>
+                </div>
+                <div className="text-right">
+                  <GradePill grade={m.grade} size="lg" />
+                  <span className="mt-2 block text-xs text-[#8b95a1]">Depth grade</span>
+                </div>
+              </div>
+              <span className="mt-2 block text-sm text-[#9aa3ad]">{verdict.title} · {usd(m.move_cost_usd)} to move 10¢</span>
             </div>
             <p className="mt-3 text-sm text-[#c5ced6]">{verdict.reason}</p>
+            {focusRelation?.latest_check && (
+              <p className={`mt-2 text-sm ${verifiedBreak ? "text-[#ff8b98]" : "text-[#9aa3ad]"}`}>
+                Compared with related markets: {focusRelation.latest_check.summary}
+              </p>
+            )}
             <p className="mt-2 text-xs text-[#8b95a1]">Order book observed {new Date(m.updated_at * 1000).toLocaleString()}. The YES percent is the mid of that book.</p>
             {notes.length > 0 && (
               <ul className="mt-3 list-disc pl-5 text-sm text-[#8b95a1]">
@@ -65,8 +81,13 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
               </ul>
             )}
             <div className="mt-4 flex flex-wrap gap-2">
-              <Link href={`/compare?symbol=${encodeURIComponent(m.symbol)}`} className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-[#101216]">Compare</Link>
-              <a href="#warnings" className="rounded-full bg-[#22262d] px-3 py-1.5 text-sm text-white">Investigate</a>
+              <Link
+                href={focusRelation ? `/compare?relation=${encodeURIComponent(focusRelation.id)}` : `/compare?symbol=${encodeURIComponent(m.symbol)}`}
+                className="rounded-full bg-white px-3 py-1.5 text-sm font-medium text-[#101216]"
+              >
+                {verifiedBreak ? "See inconsistency" : "Compare related"}
+              </Link>
+              <a href="#evidence" className="rounded-full bg-[#22262d] px-3 py-1.5 text-sm text-white">Investigate</a>
               <WatchButton symbol={m.symbol} />
               <a href="#verify" className="rounded-full bg-[#22262d] px-3 py-1.5 text-sm text-white">Verify</a>
             </div>
@@ -76,21 +97,27 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
           </div>
         </div>
         {others.length > 0 && (
-          <ul className="mt-6 grid gap-2 sm:grid-cols-2">
-            {others.map((x) => (
-              <li key={x.symbol}>
-                <Link href={`/market/${encodeURIComponent(x.symbol)}`} className="flex items-center justify-between gap-3 rounded-xl bg-[#1a1d22] px-3 py-2 hover:bg-[#22262d]">
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm text-white">{x.label}</span>
-                    <span className="text-xs text-[#8b95a1]">{assess(x).title}</span>
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums text-white">
-                    {x.odds_pct != null ? `${x.odds_pct.toFixed(0)}%` : "—"}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-6">
+            <h2 className="text-sm font-medium text-[#9aa3ad]">Same event · grades and odds</h2>
+            <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+              {others.map((x) => (
+                <li key={x.symbol}>
+                  <Link href={`/market/${encodeURIComponent(x.symbol)}`} className="flex items-center justify-between gap-3 rounded-xl bg-[#1a1d22] px-3 py-2 hover:bg-[#22262d]">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <GradePill grade={x.grade} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-white">{x.label}</span>
+                        <span className="text-xs text-[#8b95a1]">{assess(x).title}</span>
+                      </span>
+                    </span>
+                    <span className="text-sm font-semibold tabular-nums text-white">
+                      {x.odds_pct != null ? `${x.odds_pct.toFixed(0)}%` : "—"}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </section>
 

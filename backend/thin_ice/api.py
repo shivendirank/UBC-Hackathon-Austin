@@ -13,13 +13,20 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import config, db, incidents, service
+from . import config, csv_store, db, incidents, service
 
 app = FastAPI(title="Thin Ice", version="0.1.0",
               description="How much would it cost to move these odds? Live grades for Gemini prediction markets.")
-app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"],
+                   allow_credentials=True)
 
 conn = db.connect()
+
+
+class AuthBody(BaseModel):
+    email: str
+    password: str
+    name: str = ""
 
 
 @app.get("/health")
@@ -27,16 +34,46 @@ def health():
     return {"ok": True}
 
 
+@app.post("/api/auth/register")
+def register(body: AuthBody):
+    try:
+        user = csv_store.create_user(body.email, body.name, body.password)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    token = csv_store.issue_token(user)
+    return {"token": token, "user": user}
+
+
+@app.post("/api/auth/login")
+def login(body: AuthBody):
+    user = csv_store.verify_user(body.email, body.password)
+    if not user:
+        raise HTTPException(401, "invalid email or password")
+    return {"token": csv_store.issue_token(user), "user": user}
+
+
+@app.get("/api/auth/me")
+def me(authorization: str = Header("")):
+    token = authorization.removeprefix("Bearer ").strip()
+    user = csv_store.user_from_token(token) if token else None
+    if not user:
+        raise HTTPException(401, "not signed in")
+    return {"user": user}
+
+
 @app.get("/api/markets")
 def markets(category: Optional[str] = None, sort: str = Query("fragile", pattern="^(fragile|deep)$"),
             limit: int = Query(100, le=500)):
     """Latest grade per contract. sort=fragile = cheapest two-sided first; empty books always last."""
-    return {"markets": service.list_markets(conn, category, sort, limit)}
+    rows = service.list_markets(conn, category, sort, limit)
+    csv_store.write_markets_csv(rows)
+    return {"markets": rows, "csv": str(csv_store.MARKETS_CSV)}
 
 
 @app.get("/api/markets/{symbol}")
-def market(symbol: str, hours: int = Query(72, le=24 * 14)):
-    m = service.get_market(conn, symbol, hours)
+def market(symbol: str, hours: int = Query(72, le=24 * 14),
+           refresh: bool = Query(False, description="Re-pull the live Gemini book before responding")):
+    m = service.refresh_from_gemini(conn, symbol) if refresh else service.get_market(conn, symbol, hours)
     if not m:
         raise HTTPException(404, "unknown or not yet graded")
     return m

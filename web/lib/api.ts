@@ -21,6 +21,7 @@ export type Score = {
   exhausted: boolean;
   last_trade_ts: number | null;
   spoof_cost_usd: number | null;
+  depth_pct?: number | null;
   reasons: string[];
   formula_version: string;
 };
@@ -153,7 +154,7 @@ export type MarketDetail = Market & {
 async function get<T>(path: string): Promise<T | null> {
   await connection(); // live data: render at request time, never at build time
   try {
-    const r = await fetch(`${API_URL}${path}`);
+    const r = await fetch(`${API_URL}${path}`, { cache: "no-store" });
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return (await r.json()) as T;
@@ -173,7 +174,10 @@ export const getMarkets = (opts?: { category?: string; sort?: "fragile" | "deep"
 
 export const findMarket = (q: string) =>
   get<MarketDetail>(`/api/grade?q=${encodeURIComponent(q)}`);
-export const getMarket = (symbol: string) => get<MarketDetail>(`/api/markets/${encodeURIComponent(symbol)}`);
+export const getMarket = (symbol: string, opts?: { refresh?: boolean }) => {
+  const q = opts?.refresh ? "?refresh=true" : "";
+  return get<MarketDetail>(`/api/markets/${encodeURIComponent(symbol)}${q}`);
+};
 
 export const getIncidents = (status?: string) =>
   get<{ incidents: Incident[] }>(`/api/incidents${status ? `?status=${status}` : ""}`);

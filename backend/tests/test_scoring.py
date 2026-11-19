@@ -66,9 +66,19 @@ def test_spread_over_ten_caps_at_D():
     assert s.grade == "D"
 
 
-def test_thin_book_is_F_with_dollar_reason():
+def test_thin_book_is_F_with_depth_reason():
     s = score_book("X", [lv(0.30, 20), lv(0.20, 5)], [lv(0.32, 20), lv(0.42, 5)], now=NOW, last_trade_ts=FRESH)
-    assert s.grade == "F" and s.move_cost_usd < 100
+    assert s.grade == "F" and s.depth_pct is not None
+    assert "depth" in " ".join(s.reasons).lower() or "contracts" in " ".join(s.reasons).lower()
+
+
+def test_medium_relative_depth_is_C():
+    # Most of the cheaper side sits in the 10¢ window, with enough contracts for C.
+    bids = [lv(0.49, 80), lv(0.35, 10)]
+    asks = [lv(0.50, 80), lv(0.65, 10)]
+    s = score_book("X", bids, asks, now=NOW, last_trade_ts=FRESH)
+    assert s.grade == "C", (s.grade, s.depth_pct, s.reasons)
+    assert s.depth_pct is not None and s.depth_pct >= 35
 
 
 def test_event_grade_uses_favorite():

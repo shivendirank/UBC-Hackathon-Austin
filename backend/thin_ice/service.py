@@ -73,6 +73,21 @@ def list_markets(conn, category: Optional[str] = None, sort: str = "fragile", li
     return [_row_to_market(r) for r in conn.execute(sql, args).fetchall()]
 
 
+def refresh_from_gemini(conn, symbol: str) -> Optional[dict]:
+    """Pull a fresh Gemini book + trades, grade it, then return the market detail."""
+    if str(symbol).startswith("SYNTHETIC-"):
+        return get_market(conn, symbol)
+    from .gemini import Gemini
+    from .recorder import record_one
+
+    try:
+        record_one(Gemini(), conn, symbol)
+    except Exception:
+        # Fall back to last stored grade if Gemini is unreachable.
+        return get_market(conn, symbol)
+    return get_market(conn, symbol)
+
+
 def get_market(conn, symbol: str, history_hours: int = 72) -> Optional[dict]:
     row = conn.execute(db.LATEST_GRADES_SQL + " WHERE g.symbol = ?", (symbol,)).fetchone()
     if not row:

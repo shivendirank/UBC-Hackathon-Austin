@@ -137,6 +137,12 @@ def run(once: bool, limit: int) -> None:
             checks = incidents.run_checks(conn)
             flagged = [c for c in checks if c["status"] not in ("coherent", "insufficient_data")]
             log.info("consistency: %d relations checked, %d flagged", len(checks), len(flagged))
+            try:
+                from . import csv_store, service
+                path = csv_store.write_markets_csv(service.list_markets(conn, None, "deep", limit))
+                log.info("wrote %s", path)
+            except Exception as exc:
+                log.warning("markets.csv: %s", exc)
             if once:
                 return
     finally:

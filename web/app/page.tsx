@@ -32,8 +32,9 @@ export default async function Home(props: PageProps<"/">) {
     if (direct && !markets.some((m) => m.symbol === direct!.symbol)) markets = [direct, ...markets];
   }
 
-  const relations = await getRelations();
-  const inconsistent = inconsistentSymbols(relations?.relations ?? []);
+  const relationsData = await getRelations();
+  const relations = relationsData?.relations ?? [];
+  const inconsistent = inconsistentSymbols(relations);
   const quoted = all.filter((m) => bookStatus(m) !== "Empty" && m.odds_pct != null);
   const forecasts = mixBoards(groupEvents(quoted)).slice(0, 18).map((b) => ({
     href: `/market/${encodeURIComponent(b.markets[0].symbol)}`,
@@ -90,9 +91,13 @@ export default async function Home(props: PageProps<"/">) {
         <p className="mt-10 text-sm text-[#8b95a1]">No markets match that search.</p>
       ) : (
         <>
-          {featured && <div className="mt-6"><FeaturedBoard board={featured} histories={histories} inconsistent={inconsistent} /></div>}
+          {featured && (
+            <div className="mt-6">
+              <FeaturedBoard board={featured} histories={histories} inconsistent={inconsistent} relations={relations} />
+            </div>
+          )}
           <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {rest.map((b) => <EventCard key={b.key} board={b} inconsistent={inconsistent} />)}
+            {rest.map((b) => <EventCard key={b.key} board={b} inconsistent={inconsistent} relations={relations} />)}
           </div>
         </>
       )}

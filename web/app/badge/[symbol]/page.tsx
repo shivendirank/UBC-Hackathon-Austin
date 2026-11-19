@@ -15,7 +15,7 @@ export default async function Badge(props: PageProps<"/badge/[symbol]">) {
       <span>
         {m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "No price"}
         <span className="block text-neutral-700 dark:text-neutral-300">
-          {status === "Empty" ? "Empty" : `${status} · ${usd(m.move_cost_usd)}`}
+          {status === "Empty" ? "Empty" : `Grade ${m.grade} · ${status} · ${usd(m.move_cost_usd)}`}
         </span>
       </span>
     </a>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { GradePill } from "@/components/GradePill";
 import { API_URL, usd, type Market } from "@/lib/api";
 import { readWatch } from "@/components/WatchButton";
 import { bookStatus } from "@/lib/status";
@@ -34,15 +35,18 @@ export default function WatchPage() {
           {markets.map((m) => {
             const status = bookStatus(m);
             return (
-              <li key={m.symbol} className="py-3">
-                <Link href={`/market/${encodeURIComponent(m.symbol)}`} className="hover:underline">
-                  <span className="font-medium">{m.label}</span>
-                  <span className="block text-sm text-neutral-500">{m.event_title}</span>
-                </Link>
-                <p className="mt-1 text-sm tabular-nums">
-                  {m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"} · {status}
-                  {status !== "Empty" ? ` · ${usd(m.move_cost_usd)} to move 10¢` : ""}
-                </p>
+              <li key={m.symbol} className="flex items-start gap-3 py-3">
+                <GradePill grade={m.grade} />
+                <div className="min-w-0 flex-1">
+                  <Link href={`/market/${encodeURIComponent(m.symbol)}`} className="hover:underline">
+                    <span className="font-medium">{m.label}</span>
+                    <span className="block text-sm text-neutral-500">{m.event_title}</span>
+                  </Link>
+                  <p className="mt-1 text-sm tabular-nums">
+                    {m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"} · Grade {m.grade} · {status}
+                    {status !== "Empty" ? ` · ${usd(m.move_cost_usd)} to move 10¢` : ""}
+                  </p>
+                </div>
               </li>
             );
           })}
