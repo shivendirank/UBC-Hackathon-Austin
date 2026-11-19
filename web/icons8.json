@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "icons": {
+    "pack": "color",
+    "sizes": [32, 56, 64],
+    "color": null,
+    "items": {
+      "bitcoin": { "id": "63192", "commonName": "bitcoin" },
+      "american-football": { "id": "63086", "commonName": "american-football" },
+      "basketball": { "id": "12969", "commonName": "basketball" },
+      "hockey": { "id": "16907", "commonName": "hockey" },
+      "soccer-ball": { "id": "84301", "commonName": "football2" },
+      "barrel": { "id": "FDsBBEyrn6q8", "commonName": "barrel" },
+      "cloud": { "id": "11871", "commonName": "cloud" },
+      "bank": { "id": "12985", "commonName": "bank" },
+      "elections": { "id": "23429", "commonName": "elections" },
+      "processor": { "id": "13105", "commonName": "processor" },
+      "snowflake": { "id": "17365", "commonName": "snowflake" }
+    }
+  }
+}

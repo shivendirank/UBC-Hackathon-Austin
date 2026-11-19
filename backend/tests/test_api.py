@@ -33,6 +33,8 @@ def test_api_flow(tmp_path, monkeypatch):
     assert c.get("/health").json() == {"ok": True}
     ms = c.get("/api/markets").json()["markets"]
     assert ms[0]["symbol"] == "GEMI-PM-NETANYAHU" and ms[0]["grade"] == "F"
+    assert ms[0]["status"] == "Runs out" and ms[0]["grade_words"].startswith("Runs out")
+    assert "F" not in ms[0]["grade_words"] and "F" not in ms[0]["status"]
     assert c.get("/api/grade", params={"q": "next prime minister netanyahu"}).json()["symbol"] == "GEMI-PM-NETANYAHU"
     assert c.get("/api/grade", params={"q": "https://www.gemini.com/prediction-markets/next-pm"}).status_code == 200
     assert c.post("/api/markets/GEMI-PM-NETANYAHU/receipt").status_code == 401
@@ -89,3 +91,32 @@ def test_incident_lifecycle(tmp_path, monkeypatch):
     done = c.get(f"/api/incidents/{inc['id']}").json()
     assert done["status"] == "resolved" and done["timeline"][-1]["event"] == "resolved_by_data"
     assert c.get("/api/relations").json()["relations"][0]["latest_check"]["status"] == "coherent"
+
+
+def test_synthetic_replay_is_labeled_and_skips_gemini(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "s.db"))
+    monkeypatch.setenv("RELATIONS_PATH", str(tmp_path / "none.json"))
+    monkeypatch.setenv("GROK_ROUTINE_WEBHOOK", "")
+    from thin_ice import config
+    importlib.reload(config)
+    from thin_ice import db, incidents, service, synthetic
+    importlib.reload(db)
+    importlib.reload(incidents)
+    importlib.reload(service)
+    importlib.reload(synthetic)
+
+    conn = db.connect()
+    out = synthetic.load(conn)
+    assert out["synthetic"] is True and out["status"] == "executable" and out["incident_id"]
+    markets = service.list_markets(conn)
+    assert {m["symbol"] for m in markets} == {"SYNTHETIC-BTC-100K", "SYNTHETIC-BTC-150K"}
+    assert all(m["synthetic"] for m in markets)
+
+    class Boom:
+        def book(self, symbol):
+            raise AssertionError(symbol)
+
+    inc = incidents.get_incident(conn, out["incident_id"])
+    assert inc["synthetic"] is True
+    again = incidents.recheck(conn, Boom(), out["incident_id"])
+    assert again["status"] == "executable" and again["synthetic"] is True and again["refreshed_from_gemini"] is False

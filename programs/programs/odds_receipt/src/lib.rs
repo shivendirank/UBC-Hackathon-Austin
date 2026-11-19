@@ -11,7 +11,7 @@
 
 use anchor_lang::prelude::*;
 
-declare_id!("2kMn7MsDWpn5Q4WchgNxQ4dcDnQp1bQpvo9F3kSe3xPR"); // run `anchor keys sync` after `anchor build`
+declare_id!("HvV3TjjxoCwNyb7a3W5ikC18RPbDkaGAfYHzKPYyqdur"); // run `anchor keys sync` after `anchor build`
 
 pub const MAX_SYMBOL: usize = 64;
 pub const MAX_URI: usize = 100;

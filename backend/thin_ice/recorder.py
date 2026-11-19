@@ -22,25 +22,72 @@ from .scoring import score_book, unusual_move
 log = logging.getLogger("thin_ice.recorder")
 
 
+# A BTC ladder has dozens of strikes. Cap each event and each category, then
+# round-robin, so sports and commodities are recorded alongside crypto.
+# Sports listings lead with player props. Skip those and keep scanning until
+# game markets (spreads, moneylines) fill the sports bucket.
+PER_EVENT = 2
+PER_CATEGORY = 16
+EVENTS_PER_CATEGORY = 12
+SPORTS_SCAN = 80
+SPORTS_EVENTS = 12
+SPORTS_CAP = 24
+
+
+def _headline(event: dict) -> bool:
+    title = (event.get("title") or "").lower()
+    return not any(piece in title for piece in ("player ", "top 10", "top 20", "top 5"))
+
+
 def discover(client: Gemini, conn, limit: int) -> list[str]:
-    """Refresh the contracts table and return the watchlist (demo symbols first)."""
+    """Refresh a spread of contracts and return a category-balanced watchlist."""
     now = int(time.time())
-    symbols: list[str] = list(config.DEMO_SYMBOLS)
     events: list[dict] = []
+    buckets: dict[str, list[str]] = {}
     with db.tx(conn):
         for category in config.CATEGORIES:
-            for event in client.events(category=category):
+            bucket = buckets.setdefault(category, [])
+            cap = SPORTS_CAP if category == "Sports" else PER_CATEGORY
+            scan = SPORTS_SCAN if category == "Sports" else EVENTS_PER_CATEGORY
+            kept = 0
+            for event in client.events(category=category, max_events=scan):
+                if category == "Sports" and not _headline(event):
+                    continue
                 events.append(event)
-                for contract in open_contracts(event):
+                opened = list(open_contracts(event))
+                for contract in opened:
                     db.upsert_contract(conn, event, contract, now)
-                    if contract["instrumentSymbol"] not in symbols:
-                        symbols.append(contract["instrumentSymbol"])
+                kept += 1
+                if len(bucket) < cap:
+                    for contract in opened[:PER_EVENT]:
+                        symbol = contract["instrumentSymbol"]
+                        if symbol not in bucket:
+                            bucket.append(symbol)
+                        if len(bucket) >= cap:
+                            break
+                if category == "Sports" and kept >= SPORTS_EVENTS and len(bucket) >= cap:
+                    break
+                if category != "Sports" and kept >= EVENTS_PER_CATEGORY:
+                    break
     rels = suggest_relations(events)
     incidents.sync_relations(conn, rels)
-    log.info("discovered %d open contracts, %d relations", len(symbols), len(rels))
-    # Members of verified relations go to the front so their books are recorded close together.
-    related = [s for r in incidents.relations(conn, verified_only=True) for s in r.members if s in symbols]
-    ordered = list(dict.fromkeys(list(config.DEMO_SYMBOLS) + related + symbols))
+    mixed: list[str] = []
+    rows = list(buckets.values())
+    i = 0
+    while len(mixed) < limit:
+        added = False
+        for bucket in rows:
+            if i < len(bucket) and bucket[i] not in mixed:
+                mixed.append(bucket[i])
+                added = True
+        if not added:
+            break
+        i += 1
+    known = set(mixed)
+    related = [s for r in incidents.relations(conn, verified_only=True) for s in r.members if s in known]
+    ordered = list(dict.fromkeys(list(config.DEMO_SYMBOLS) + related + mixed))
+    log.info("discovered %d open contracts across %d categories, watching %d",
+             sum(len(b) for b in rows), len(rows), min(limit, len(ordered)))
     return ordered[:limit]
 
 

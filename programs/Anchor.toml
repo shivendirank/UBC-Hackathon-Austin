@@ -1,17 +1,20 @@
 [toolchain]
-anchor_version = "0.31.1"  # [verify] match your installed anchor-cli
+anchor_version = "0.31.1"
 
 [features]
 resolution = true
 skip-lint = false
 
 [programs.devnet]
-odds_receipt = "2kMn7MsDWpn5Q4WchgNxQ4dcDnQp1bQpvo9F3kSe3xPR"
-safe_payout = "2o7C3na3sXn3KkhzrxTHKeuARAV5TyxyQu8PVNJgCoqX"
+odds_receipt = "HvV3TjjxoCwNyb7a3W5ikC18RPbDkaGAfYHzKPYyqdur"
+safe_payout = "HPx7jxgxjDBiTKdNX1PfFcuHg41XepqayFGsUzQkZ1fB"
 
 [programs.localnet]
-odds_receipt = "2kMn7MsDWpn5Q4WchgNxQ4dcDnQp1bQpvo9F3kSe3xPR"
-safe_payout = "2o7C3na3sXn3KkhzrxTHKeuARAV5TyxyQu8PVNJgCoqX"
+odds_receipt = "HvV3TjjxoCwNyb7a3W5ikC18RPbDkaGAfYHzKPYyqdur"
+safe_payout = "HPx7jxgxjDBiTKdNX1PfFcuHg41XepqayFGsUzQkZ1fB"
+
+[registry]
+url = "https://api.apr.dev"
 
 [provider]
 cluster = "devnet"

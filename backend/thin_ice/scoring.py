@@ -141,22 +141,22 @@ def score_book(
             break
     if grade == "A" and spread > A_MAX_SPREAD_C:
         grade = "B"
-        reasons.append(f"spread {spread} cents is wider than 3 cents (A needs 3 or less)")
+        reasons.append(f"The buy and sell quotes are {spread}¢ apart.")
     if grade == "F":
         reasons.append(f"moves 10 cents for ${move_cost:,.2f} (under $100)")
 
     stale = last_trade_ts is None or now - last_trade_ts > STALE_AFTER_S
     if stale and grade != "F":
         grade = _drop(grade)
-        reasons.append("no trade in the last 24 hours" if last_trade_ts else "no trades on record")
+        reasons.append("No trade in the last 24 hours." if last_trade_ts else "No trades have been recorded for this contract yet.")
     if spread > CAP_D_SPREAD_C:
         capped = _cap(grade, "D")
         if capped != grade:
-            reasons.append(f"spread {spread} cents is over 10 cents (capped at D)")
+            reasons.append(f"The buy and sell quotes are {spread}¢ apart.")
         grade = capped
     if spread > F_SPREAD_C:
         grade = "F"
-        reasons.append(f"spread {spread} cents is over 20 cents")
+        reasons.append(f"The buy and sell quotes are {spread}¢ apart, which is wider than 20¢.")
 
     return Score(
         symbol=symbol,

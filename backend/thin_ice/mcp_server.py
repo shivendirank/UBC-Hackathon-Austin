@@ -54,7 +54,7 @@ def list_incidents(status: str = "open") -> dict:
     """Incidents the deterministic engines flagged: price inconsistencies across related contracts
     and unusual moves on thin books. status: open | reported | resolved."""
     rows = incidents.list_incidents(conn, status or None, 20)
-    return {"incidents": [{k: r[k] for k in ("id", "kind", "subject", "status", "conclusion", "opened_at")} for r in rows]}
+    return {"incidents": [{k: r[k] for k in ("id", "kind", "subject", "status", "conclusion", "opened_at", "synthetic")} for r in rows]}
 
 
 @mcp.tool()
@@ -67,7 +67,8 @@ def get_incident(incident_id: int) -> dict:
 @mcp.tool()
 def recheck(incident_id: int) -> dict:
     """Fetch fresh, synchronized order books for every contract in the incident and re-run the math.
-    Use this before concluding: it separates stale-quote artifacts from real inconsistencies."""
+    Use this before concluding: it separates stale-quote artifacts from real inconsistencies.
+    A synthetic replay reuses the stored books and does not call Gemini."""
     client = Gemini()
     try:
         return incidents.recheck(conn, client, incident_id)

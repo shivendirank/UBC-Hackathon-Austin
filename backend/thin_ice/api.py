@@ -30,7 +30,7 @@ def health():
 @app.get("/api/markets")
 def markets(category: Optional[str] = None, sort: str = Query("fragile", pattern="^(fragile|deep)$"),
             limit: int = Query(100, le=500)):
-    """Latest grade per contract. sort=fragile puts the cheapest-to-move first."""
+    """Latest grade per contract. sort=fragile = cheapest two-sided first; empty books always last."""
     return {"markets": service.list_markets(conn, category, sort, limit)}
 
 

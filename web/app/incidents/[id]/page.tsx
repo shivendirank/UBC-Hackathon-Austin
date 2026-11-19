@@ -19,6 +19,11 @@ export default async function IncidentPage(props: PageProps<"/incidents/[id]">) 
         Incident #{inc.id} · <code>{inc.subject}</code> · opened {new Date(inc.opened_at * 1000).toLocaleString()}
       </p>
       <div className="mt-4"><StatusPill status={inc.status} /></div>
+      {(inc.synthetic || inc.subject.startsWith("synthetic:")) && (
+        <p className="mt-4 rounded-lg border border-amber-400 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
+          Synthetic replay. The books behind this incident were written for the demo, not read from Gemini.
+        </p>
+      )}
 
       {check && (
         <section className="mt-8">

@@ -10,13 +10,32 @@ from typing import Optional
 from . import config, db
 from .receipts import explorer_url, make_snapshot, pin_snapshot
 
-GRADE_WORDS = {
-    "A": "Deep market. Moving these odds 10 cents would take $10,000 or more.",
-    "B": "Solid. It would take thousands of dollars to move these odds 10 cents.",
-    "C": "Fair. Around $1,000 could move these odds 10 cents.",
-    "D": "Thin. A few hundred dollars could move these odds 10 cents.",
-    "F": "Thin ice. Under $100 could move these odds, or the book is nearly empty.",
-}
+def book_status(score: dict) -> str:
+    """One-word status for the list. Letter grade stays in the payload for receipts."""
+    if score.get("mid_c") is None:
+        return "Empty"
+    if score.get("exhausted"):
+        return "Runs out"
+    return "OK"
+
+
+def money_to_move(score: dict) -> str | None:
+    """Dollar figure for a 10¢ move, or None when there is no two-sided book."""
+    if score.get("mid_c") is None:
+        return None
+    cost = float(score.get("move_cost_usd") or 0)
+    return f"${cost:,.2f}" if cost < 100 else f"${cost:,.0f}"
+
+
+def book_sentence(score: dict) -> str:
+    """Short line for badge / detail headline. Not a paragraph."""
+    status = book_status(score)
+    money = money_to_move(score)
+    if money is None:
+        return "Empty"
+    if status == "Runs out":
+        return f"Runs out · {money}"
+    return f"{money} to move 10¢"
 
 
 def _row_to_market(row) -> dict:
@@ -28,12 +47,15 @@ def _row_to_market(row) -> dict:
         "label": row["label"],
         "category": row["category"],
         "grade": row["grade"],
-        "grade_words": GRADE_WORDS[row["grade"]],
+        "status": book_status(score),
+        "grade_words": book_sentence(score),
         "odds_pct": score["mid_c"],
         "move_cost_usd": row["move_cost_usd"],
         "spread_c": row["spread_c"],
         "updated_at": row["ts"],
         "score": score,
+        "event_ticker": row["event_ticker"],
+        "synthetic": str(row["symbol"]).startswith("SYNTHETIC-"),
     }
 
 
@@ -43,7 +65,10 @@ def list_markets(conn, category: Optional[str] = None, sort: str = "fragile", li
     if category:
         sql += " WHERE c.category = ?"
         args.append(category)
-    sql += " ORDER BY g.move_cost_usd " + ("ASC" if sort == "fragile" else "DESC") + " LIMIT ?"
+    # Empty (one-sided) books sort last so the list is not a wall of dashes.
+    empty_last = "(g.best_bid_c IS NULL OR g.best_ask_c IS NULL) ASC, "
+    cost = "g.move_cost_usd ASC" if sort == "fragile" else "g.move_cost_usd DESC"
+    sql += " ORDER BY " + empty_last + cost + " LIMIT ?"
     args.append(limit)
     return [_row_to_market(r) for r in conn.execute(sql, args).fetchall()]
 

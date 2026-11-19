@@ -282,4 +282,6 @@ def check(relation: Relation, books: dict[str, Book], *, now: int,
                        "are too thin or too wide to establish a tradeable discrepancy.")
     if not relation.verified:
         res.summary += " This relationship is suggested, not yet verified against the contract rules."
+    if relation.source == "synthetic":
+        res.summary = "Synthetic replay. " + res.summary + " These books were not read from Gemini."
     return res

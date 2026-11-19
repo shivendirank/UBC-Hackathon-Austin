@@ -4,7 +4,7 @@
 use anchor_lang::prelude::*;
 use odds_receipt::{Latest, Market, FLAG_INCONSISTENT, FLAG_INCONSISTENT_EXECUTABLE, FLAG_ONE_SIDED};
 
-declare_id!("2o7C3na3sXn3KkhzrxTHKeuARAV5TyxyQu8PVNJgCoqX"); // run `anchor keys sync` after `anchor build`
+declare_id!("HPx7jxgxjDBiTKdNX1PfFcuHg41XepqayFGsUzQkZ1fB"); // run `anchor keys sync` after `anchor build`
 
 /// Grades are 0=A ... 4=F. Settle only on C or better.
 pub const WORST_ALLOWED_GRADE: u8 = 2;

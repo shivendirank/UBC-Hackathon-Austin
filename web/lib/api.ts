@@ -31,13 +31,16 @@ export type Market = {
   event_slug: string | null;
   label: string | null;
   category: string | null;
+  event_ticker?: string | null;
   grade: Grade;
+  status?: "Empty" | "Runs out" | "OK";
   grade_words: string;
   odds_pct: number | null;
   move_cost_usd: number;
   spread_c: number | null;
   updated_at: number;
   score: Score;
+  synthetic?: boolean;
 };
 
 export type HistoryPoint = {
@@ -125,6 +128,7 @@ export type Incident = {
   conclusion: string | null;
   opened_at: number;
   updated_at: number;
+  synthetic?: boolean;
   evidence: Record<string, unknown>;
   timeline: { ts: number; event: string; detail: Record<string, unknown> }[];
   report: { conclusion: string; summary: string; sources: string[]; details: string; author: string; ts: number } | null;
@@ -153,14 +157,22 @@ async function get<T>(path: string): Promise<T | null> {
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return (await r.json()) as T;
-  } catch (err) {
-    console.error(err);
+  } catch {
     return null;
   }
 }
 
-export const getMarkets = (category?: string) =>
-  get<{ markets: Market[] }>(`/api/markets${category ? `?category=${encodeURIComponent(category)}` : ""}`);
+export const getMarkets = (opts?: { category?: string; sort?: "fragile" | "deep"; limit?: number }) => {
+  const q = new URLSearchParams();
+  if (opts?.category) q.set("category", opts.category);
+  q.set("sort", opts?.sort ?? "deep");
+  if (opts?.limit) q.set("limit", String(opts.limit));
+  const qs = q.toString();
+  return get<{ markets: Market[] }>(`/api/markets${qs ? `?${qs}` : ""}`);
+};
+
+export const findMarket = (q: string) =>
+  get<MarketDetail>(`/api/grade?q=${encodeURIComponent(q)}`);
 export const getMarket = (symbol: string) => get<MarketDetail>(`/api/markets/${encodeURIComponent(symbol)}`);
 
 export const getIncidents = (status?: string) =>

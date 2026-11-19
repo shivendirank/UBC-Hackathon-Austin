@@ -157,6 +157,7 @@ def _incident_out(row) -> dict:
     d = dict(row)
     for k in ("evidence_json", "timeline_json", "report_json"):
         d[k.removesuffix("_json")] = json.loads(d.pop(k)) if d.get(k) else None
+    d["synthetic"] = str(d.get("subject", "")).startswith("synthetic:")
     return d
 
 
@@ -215,13 +216,21 @@ def recheck(conn, client, incident_id: int) -> dict:
         raise ValueError("recheck supports inconsistency incidents")
     rel = Relation(inc["relation"]["id"], inc["relation"]["kind"], inc["relation"]["members"],
                    inc["relation"]["source"], bool(inc["relation"]["verified"]))
+    synthetic = rel.source == "synthetic"
     books = {}
-    for s in rel.members:
-        b = client.book(s)
-        books[s] = book_from(s, int(time.time()), b.get("bids", []), b.get("asks", []))
+    if synthetic:
+        books = latest_books(conn, rel.members)
+    else:
+        for s in rel.members:
+            b = client.book(s)
+            books[s] = book_from(s, int(time.time()), b.get("bids", []), b.get("asks", []))
     res = check(rel, books, now=int(time.time()))
     with db.tx(conn):
         conn.execute("INSERT INTO consistency_checks(relation_id, ts, status, gap_c, result_json) VALUES (?,?,?,?,?)",
                      (rel.id, res.ts, res.status, res.gap_c, json.dumps(res.to_dict())))
-        _append(conn, incident_id, res.ts, "recheck", {"status": res.status, "gap_c": res.gap_c})
-    return res.to_dict()
+        _append(conn, incident_id, res.ts, "recheck",
+                {"status": res.status, "gap_c": res.gap_c, "synthetic": synthetic})
+    out = res.to_dict()
+    out["synthetic"] = synthetic
+    out["refreshed_from_gemini"] = not synthetic
+    return out

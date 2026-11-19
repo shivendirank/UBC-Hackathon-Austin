@@ -33,19 +33,25 @@ class Gemini:
         r.raise_for_status()
         return r.json()
 
-    def events(self, category: Optional[str] = None, status: str = "active", limit: int = 60) -> Iterator[dict]:
-        """All events in a category, following offset pagination."""
+    def events(self, category: Optional[str] = None, status: str = "active", limit: int = 60,
+               max_events: Optional[int] = None) -> Iterator[dict]:
+        """Events in a category, following offset pagination. Stops after max_events when set."""
         offset = 0
+        seen = 0
         while True:
-            params = {"status": status, "limit": limit, "offset": offset}
+            page_limit = limit if max_events is None else min(limit, max_events - seen)
+            if page_limit <= 0:
+                return
+            params = {"status": status, "limit": page_limit, "offset": offset}
             if category:
                 params["category"] = category
             page = self._get("/v1/prediction-markets/events", params)
             rows = page.get("data", [])
             yield from rows
+            seen += len(rows)
             total = page.get("pagination", {}).get("total", 0)
             offset += len(rows)
-            if not rows or offset >= total:
+            if not rows or offset >= total or (max_events is not None and seen >= max_events):
                 return
 
     def book(self, symbol: str) -> dict:

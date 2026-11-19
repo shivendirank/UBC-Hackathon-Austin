@@ -26,7 +26,8 @@ from .scoring import FORMULA_VERSION, GRADES, Score, score_book
 
 # ---------- snapshots ----------
 
-def make_snapshot(symbol: str, ts: int, book: dict, last_trade_ts: Optional[int], quantity_minimum: float) -> dict:
+def make_snapshot(symbol: str, ts: int, book: dict, last_trade_ts: Optional[int], quantity_minimum: float,
+                  source: str = "gemini:/v1/book") -> dict:
     """Everything score_book needs, nothing else. The hash covers exactly this dict."""
     return {
         "formula_version": FORMULA_VERSION,
@@ -36,7 +37,7 @@ def make_snapshot(symbol: str, ts: int, book: dict, last_trade_ts: Optional[int]
         "asks": [{"price": lv["price"], "amount": lv["amount"]} for lv in book.get("asks", [])],
         "last_trade_ts": last_trade_ts,
         "quantity_minimum": quantity_minimum,
-        "source": "gemini:/v1/book",
+        "source": source,
     }
 
 
@@ -79,7 +80,7 @@ def make_consistency_snapshot(relation: dict, books: dict, ts: int, fee_c: float
                   for s, b in sorted(books.items())},
         "fee_c": fee_c,
         "sync_tolerance_s": sync_tolerance_s,
-        "source": "gemini:/v1/book",
+        "source": "synthetic replay" if relation.get("source") == "synthetic" else "gemini:/v1/book",
     }
 
 
@@ -239,7 +240,10 @@ class ReceiptMinter:
         ix = Instruction(self.program, ix_data, accounts)
         msg = Message.new_with_blockhash([ix], self.authority.pubkey(), Hash.from_string(blockhash))
         tx = Transaction([self.authority], msg, Hash.from_string(blockhash))
-        return self._rpc("sendTransaction", [base64.b64encode(bytes(tx)).decode(), {"encoding": "base64"}])
+        # Match the confirmed blockhash above. The RPC default preflight is finalized, and a
+        # local validator's finalized slot lags that hash, which comes back as BlockhashNotFound.
+        return self._rpc("sendTransaction", [base64.b64encode(bytes(tx)).decode(),
+                                              {"encoding": "base64", "preflightCommitment": "confirmed"}])
 
     def _account_exists(self, pubkey) -> bool:
         return self._rpc("getAccountInfo", [str(pubkey), {"encoding": "base64"}])["value"] is not None
