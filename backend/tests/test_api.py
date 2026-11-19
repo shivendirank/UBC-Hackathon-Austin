@@ -93,6 +93,51 @@ def test_incident_lifecycle(tmp_path, monkeypatch):
     assert c.get("/api/relations").json()["relations"][0]["latest_check"]["status"] == "coherent"
 
 
+def test_investigate_endpoint(tmp_path, monkeypatch):
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "inv.db"))
+    monkeypatch.setenv("ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("RELATIONS_PATH", str(tmp_path / "none.json"))
+    monkeypatch.setenv("SNAPSHOT_DIR", str(tmp_path / "snaps"))
+    monkeypatch.setenv("ODDS_RECEIPT_PROGRAM_ID", "")
+    monkeypatch.setenv("GROK_ROUTINE_WEBHOOK", "")
+    monkeypatch.setenv("GROK_ROUTINE_TOKEN", "")
+    from thin_ice import config
+    importlib.reload(config)
+    from thin_ice import db, incidents, service, api
+    importlib.reload(db); importlib.reload(incidents); importlib.reload(service); importlib.reload(api)
+    from fastapi.testclient import TestClient
+    import httpx
+
+    conn, now = api.conn, int(time.time())
+    with db.tx(conn):
+        cur = conn.execute(
+            "INSERT INTO incidents(kind, subject, status, opened_at, updated_at, evidence_json, timeline_json) "
+            "VALUES ('unusual_move', 'GEMI-TEST', 'open', ?, ?, ?, ?)",
+            (now, now, "{}", '[{"ts": %d, "event": "opened", "detail": {}}]' % now))
+        iid = cur.lastrowid
+
+    c = TestClient(api.app)
+    assert c.post(f"/api/incidents/{iid}/investigate").status_code == 503
+    assert c.post("/api/incidents/99999/investigate").status_code == 404
+
+    monkeypatch.setenv("GROK_ROUTINE_WEBHOOK", "https://example.test/hook")
+    monkeypatch.setenv("GROK_ROUTINE_TOKEN", "tok")
+    importlib.reload(config)
+    importlib.reload(incidents)
+    importlib.reload(api)
+    c = TestClient(api.app)
+
+    class FakeResp:
+        status_code = 200
+        text = "ok"
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: FakeResp())
+    r = c.post(f"/api/incidents/{iid}/investigate")
+    assert r.status_code == 202 and r.json()["notified"] is True
+    detail = c.get(f"/api/incidents/{iid}").json()
+    assert detail["timeline"][-1]["event"] == "investigation_requested"
+
+
 def test_synthetic_replay_is_labeled_and_skips_gemini(tmp_path, monkeypatch):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "s.db"))
     monkeypatch.setenv("RELATIONS_PATH", str(tmp_path / "none.json"))

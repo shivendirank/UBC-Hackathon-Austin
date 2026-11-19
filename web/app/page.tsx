@@ -17,11 +17,13 @@ export default async function Home(props: PageProps<"/">) {
   const all = data?.markets ?? [];
   const categories = [...new Set(all.map((m) => m.category).filter((c): c is string => Boolean(c)))].sort();
 
-  let markets = all.filter((m) => bookStatus(m) !== "Empty");
+  const isDemo = (m: Market) => Boolean(m.synthetic || m.event_title?.includes("Synthetic replay"));
+  let markets = all.filter((m) => bookStatus(m) !== "Empty" && !isDemo(m));
   if (category) markets = markets.filter((m) => m.category === category);
   if (q) {
     const needle = q.toLowerCase();
     markets = all.filter((m) =>
+      !isDemo(m) &&
       [m.event_title, m.label, m.symbol, m.category].some((v) => v?.toLowerCase().includes(needle)),
     );
   }
@@ -35,7 +37,7 @@ export default async function Home(props: PageProps<"/">) {
   const relationsData = await getRelations();
   const relations = relationsData?.relations ?? [];
   const inconsistent = inconsistentSymbols(relations);
-  const quoted = all.filter((m) => bookStatus(m) !== "Empty" && m.odds_pct != null);
+  const quoted = all.filter((m) => bookStatus(m) !== "Empty" && m.odds_pct != null && !isDemo(m));
   const forecasts = mixBoards(groupEvents(quoted)).slice(0, 18).map((b) => ({
     href: `/market/${encodeURIComponent(b.markets[0].symbol)}`,
     title: b.title,
@@ -78,12 +80,6 @@ export default async function Home(props: PageProps<"/">) {
       {!data && (
         <p className="mt-8 rounded-2xl border border-[#f0d7a8] bg-[#2a2116] p-4 text-sm text-[#f0d7a8]">
           Can&apos;t reach the Thin Ice API. Start it with uvicorn in backend/.
-        </p>
-      )}
-
-      {markets.some((m) => m.synthetic || m.event_title?.includes("Synthetic replay")) && (
-        <p className="mt-4 rounded-2xl border border-[#f0d7a8] bg-[#2a2116] px-4 py-3 text-sm text-[#f0d7a8]">
-          Cards marked demo replay were written for this demo. They are not live Gemini quotes.
         </p>
       )}
 

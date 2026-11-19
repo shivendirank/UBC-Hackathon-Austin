@@ -41,10 +41,7 @@ export function FeaturedBoard({
                   </span>
                 )}
               </div>
-              <p className="mt-1 text-sm text-[#8b95a1]">
-                {board.category ?? "Market"}
-                {board.synthetic ? " · demo replay" : ""}
-              </p>
+              <p className="mt-1 text-sm text-[#8b95a1]">{board.category ?? "Market"}</p>
             </div>
           </div>
 

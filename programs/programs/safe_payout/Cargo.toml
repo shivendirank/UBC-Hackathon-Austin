@@ -16,5 +16,5 @@ no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "odds_receipt/idl-build"]
 
 [dependencies]
-anchor-lang = "0.31.1"
+anchor-lang = "=0.31.1"
 odds_receipt = { path = "../odds_receipt", features = ["cpi"] }

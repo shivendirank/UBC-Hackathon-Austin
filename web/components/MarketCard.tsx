@@ -10,7 +10,6 @@ const CHIP: Record<string, string> = {
 
 export function MarketCard({ market }: { market: Market }) {
   const status = bookStatus(market);
-  const synthetic = market.synthetic || market.event_title?.includes("Synthetic replay");
   const pct = market.odds_pct != null ? Math.max(0, Math.min(100, market.odds_pct)) : 0;
   return (
     <article className="flex flex-col rounded-2xl bg-white p-5 shadow-[0_10px_30px_rgba(16,40,58,0.06)] ring-1 ring-[#e3ebf3] transition duration-200 motion-safe:hover:-translate-y-0.5 hover:shadow-[0_18px_40px_rgba(16,40,58,0.1)]">
@@ -18,7 +17,6 @@ export function MarketCard({ market }: { market: Market }) {
         <span className="rounded-full bg-[#e7f4f3] px-2.5 py-0.5 text-xs font-medium text-[#0b6e68]">
           {market.category ?? "Market"}
         </span>
-        {synthetic && <span className="text-xs font-medium text-[#9a5b10]">Demo replay</span>}
       </div>
       <h2 className="mt-3 text-base font-semibold leading-snug text-[#142033]">
         <Link href={`/market/${encodeURIComponent(market.symbol)}`} className="hover:text-[#0e8f86]">

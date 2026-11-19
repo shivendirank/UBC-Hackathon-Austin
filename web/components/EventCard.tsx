@@ -36,7 +36,7 @@ export function EventCard({
               {board.title}
             </Link>
           </h2>
-          <p className="mt-0.5 text-xs text-[#8b95a1]">{board.category ?? "Market"}{board.synthetic ? " · demo replay" : ""}</p>
+          <p className="mt-0.5 text-xs text-[#8b95a1]">{board.category ?? "Market"}</p>
           {boardBroken && (
             <p className="mt-1 text-xs font-medium text-[#ff8b98]">
               Related contracts disagree ·{" "}

@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Outfit } from "next/font/google";
+import { AgentOrbHost } from "@/components/AgentOrbHost";
+import { CopilotProviders } from "@/components/copilot/Providers";
 import { SiteHeader } from "@/components/SiteHeader";
 import "./globals.css";
 
@@ -21,8 +24,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${outfit.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col bg-[#07080a] text-[#f4f6f8]">
-        <SiteHeader />
-        {children}
+        <CopilotProviders>
+          <SiteHeader />
+          {children}
+          <Suspense fallback={null}>
+            <AgentOrbHost />
+          </Suspense>
+        </CopilotProviders>
       </body>
     </html>
   );

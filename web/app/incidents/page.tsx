@@ -19,13 +19,18 @@ export default async function IncidentsPage() {
           {incidents.map((i) => (
             <li key={i.id} className="py-3">
               <Link href={`/incidents/${i.id}`} className="flex flex-wrap items-center gap-3 hover:underline">
+                <span className="rounded-md bg-white/10 px-2 py-0.5 text-xs font-semibold tabular-nums text-[#9aebff]">
+                  #{i.id}
+                </span>
                 <StatusPill status={i.status} />
                 <span className="font-medium">
                   {i.kind === "inconsistency" ? "Related prices disagree" : "Unusual move on a thin book"}
                 </span>
                 <code className="text-xs text-neutral-500">{i.subject}</code>
-                {(i.synthetic || i.subject.startsWith("synthetic:")) && (
-                  <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Synthetic</span>
+                {i.report ? (
+                  <span className="text-xs text-[#8ee0b0]">Grok reported</span>
+                ) : (
+                  <span className="text-xs text-[#ffc46b]">Awaiting Grok</span>
                 )}
                 {i.conclusion && <span className="text-sm">· {CONCLUSION_WORDS[i.conclusion] ?? i.conclusion}</span>}
                 <span className="ml-auto text-xs text-neutral-500">{new Date(i.updated_at * 1000).toLocaleString()}</span>

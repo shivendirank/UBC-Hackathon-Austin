@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { CONCLUSION_WORDS, StatusPill } from "@/components/StatusPill";
+import { InvestigatePanel } from "@/components/InvestigatePanel";
+import { StatusPill } from "@/components/StatusPill";
 import { getIncident } from "@/lib/api";
 
 export default async function IncidentPage(props: PageProps<"/incidents/[id]">) {
@@ -53,22 +54,7 @@ export default async function IncidentPage(props: PageProps<"/incidents/[id]">) 
 
       <section className="mt-8">
         <h2 className="text-lg font-semibold">Investigation</h2>
-        {inc.report ? (
-          <div className="mt-2 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-            <p className="font-medium">{CONCLUSION_WORDS[inc.report.conclusion] ?? inc.report.conclusion}</p>
-            <p className="mt-2 text-sm">{inc.report.summary}</p>
-            {inc.report.sources.length > 0 && (
-              <ul className="mt-2 list-disc pl-5 text-sm">
-                {inc.report.sources.map((s) => (
-                  <li key={s}><a className="text-sky-600 hover:underline" href={s}>{s}</a></li>
-                ))}
-              </ul>
-            )}
-            <p className="mt-2 text-xs text-neutral-500">Filed by {inc.report.author}</p>
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-neutral-500">Waiting for Grok Bot&apos;s report.</p>
-        )}
+        <InvestigatePanel incidentId={inc.id} initial={inc} />
       </section>
 
       <section className="mt-8">

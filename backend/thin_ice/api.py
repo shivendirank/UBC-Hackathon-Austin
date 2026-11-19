@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-from . import config, csv_store, db, incidents, service
+from . import config, copilot, csv_store, db, incidents, service
 
 app = FastAPI(title="Thin Ice", version="0.1.0",
               description="How much would it cost to move these odds? Live grades for Gemini prediction markets.")
@@ -149,6 +149,23 @@ def incident(incident_id: int):
     return inc
 
 
+@app.post("/api/incidents/{incident_id}/investigate", status_code=202)
+def investigate(incident_id: int):
+    """Wake the Grok Bot routine webhook so it investigates and submit_report's back."""
+    try:
+        return incidents.request_investigation(conn, incident_id)
+    except LookupError:
+        raise HTTPException(404)
+    except RuntimeError:
+        raise HTTPException(
+            503,
+            "Grok routine webhook not configured. Set GROK_ROUTINE_WEBHOOK in backend/.env "
+            "(see docs/GROK_BOT_SETUP.md).",
+        )
+    except ConnectionError:
+        raise HTTPException(502, "Grok routine webhook did not accept the request.")
+
+
 class Report(BaseModel):
     conclusion: str
     summary: str
@@ -174,5 +191,81 @@ def publish_assessment(relation_id: str, x_admin_token: str = Header("")):
     _admin(x_admin_token)
     try:
         return service.mint_consistency(conn, relation_id)
+    except LookupError:
+        raise HTTPException(404)
+
+
+# ---------- Copilot (voice agent tools; deterministic engines only) ----------
+
+class CopilotSessionBody(BaseModel):
+    symbol: Optional[str] = None
+    path: Optional[str] = None
+
+
+class CompareBody(BaseModel):
+    symbols: list[str]
+
+
+@app.get("/api/copilot/status")
+def copilot_status():
+    return {
+        "elevenlabs_configured": copilot.elevenlabs_configured(),
+        "agent_id_set": bool(config.ELEVENLABS_AGENT_ID),
+        "api_key_set": bool(config.ELEVENLABS_API_KEY),
+    }
+
+
+@app.post("/api/copilot/session")
+def copilot_session(body: CopilotSessionBody = CopilotSessionBody()):
+    ctx = {"symbol": body.symbol, "path": body.path}
+    return copilot.create_elevenlabs_session(ctx)
+
+
+@app.get("/api/copilot/resolve")
+def copilot_resolve(q: str = Query(..., min_length=1)):
+    """Resolve a spoken/typed market name, Gemini URL, or symbol to a graded contract."""
+    symbol = service.find_market(conn, q)
+    if not symbol:
+        raise HTTPException(404, "no matching Gemini market in Thin Ice yet")
+    try:
+        analysis = copilot.market_analysis(conn, symbol)
+    except LookupError:
+        raise HTTPException(404, "matched symbol has no grade yet")
+    return {
+        "query": q,
+        "symbol": symbol,
+        "path": f"/market/{symbol}",
+        "event_title": analysis.get("event_title"),
+        "label": analysis.get("label"),
+        "odds_pct": analysis.get("odds_pct"),
+        "grade_words": analysis.get("grade_words"),
+        "move_cost_usd": analysis.get("move_cost_usd"),
+    }
+
+
+@app.get("/api/copilot/markets/{symbol}/analysis")
+def copilot_analysis(symbol: str):
+    try:
+        return copilot.market_analysis(conn, symbol)
+    except LookupError:
+        raise HTTPException(404, "unknown or not yet graded")
+
+
+@app.get("/api/copilot/markets/{symbol}/related")
+def copilot_related(symbol: str):
+    return copilot.related_markets(conn, symbol)
+
+
+@app.post("/api/copilot/compare")
+def copilot_compare(body: CompareBody):
+    if not body.symbols or len(body.symbols) > 12:
+        raise HTTPException(422, "provide 1–12 symbols")
+    return copilot.compare_probabilities(conn, body.symbols)
+
+
+@app.get("/api/copilot/incidents/{incident_id}")
+def copilot_incident(incident_id: int):
+    try:
+        return copilot.investigation_report(conn, incident_id)
     except LookupError:
         raise HTTPException(404)

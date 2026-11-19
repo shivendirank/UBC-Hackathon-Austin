@@ -58,3 +58,7 @@ SYNC_TOLERANCE_S = int(_env("SYNC_TOLERANCE_S", "120"))
 GROK_ROUTINE_WEBHOOK = _env("GROK_ROUTINE_WEBHOOK")
 GROK_ROUTINE_TOKEN = _env("GROK_ROUTINE_TOKEN")  # sent as a Bearer header if set [verify]
 PUBLIC_API_URL = _env("PUBLIC_API_URL", "http://localhost:8000")
+
+# ElevenLabs Agents (Copilot). Keys stay server-side; the web app only gets a short-lived signed URL.
+ELEVENLABS_API_KEY = _env("ELEVENLABS_API_KEY")
+ELEVENLABS_AGENT_ID = _env("ELEVENLABS_AGENT_ID")

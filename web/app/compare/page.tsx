@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { CompareAgent } from "@/components/CompareAgent";
 import { GradePill } from "@/components/GradePill";
 import { LiveDualOddsChart } from "@/components/LiveDualOddsChart";
 import { StatusPill } from "@/components/StatusPill";
@@ -47,13 +46,8 @@ export default async function ComparePage(props: {
   const selected = symbol ? (bySymbol.get(symbol) ?? (await getMarket(symbol))) : null;
   const leftList = rankMarkets(markets).slice(0, 40);
   const similar = selected ? findSimilar(selected, markets, relations) : [];
-  const agentSymbols = selected
-    ? [selected.symbol, ...similar.slice(0, 3).map((s) => s.market.symbol)]
-    : leftList.slice(0, 4).map((m) => m.symbol);
-
   return (
     <main className="relative mx-auto w-full max-w-[1680px] px-6 py-8 lg:px-8">
-      <CompareAgent symbols={agentSymbols} />
       <Link href="/" className="text-sm font-medium text-[#9aebff] hover:underline">All markets</Link>
       <div className="mt-4 max-w-2xl pr-28 sm:pr-36">
         <h1 className="text-3xl font-semibold tracking-tight text-white">Compare markets</h1>
@@ -154,7 +148,6 @@ async function SideBySide({
   if (!detailA || !detailB) {
     return (
       <main className="relative mx-auto w-full max-w-[1680px] px-6 py-8 lg:px-8">
-        <CompareAgent symbols={[aSym, bSym]} />
         <Link href="/compare" className="text-sm font-medium text-[#9aebff] hover:underline">← Compare</Link>
         <p className="mt-6 text-sm text-[#8b95a1]">
           Could not load live Gemini books for this pair. They may not be graded yet — leave the recorder running.
@@ -176,7 +169,6 @@ async function SideBySide({
 
   return (
     <main className="relative mx-auto w-full max-w-[1680px] px-6 py-8 lg:px-8">
-      <CompareAgent symbols={[left.symbol, right.symbol]} />
       <Link
         href={`/compare?symbol=${encodeURIComponent(left.symbol)}`}
         className="text-sm font-medium text-[#9aebff] hover:underline"

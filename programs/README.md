@@ -13,15 +13,35 @@
 Trust assumption: a receipt proves what Thin Ice committed and when, not that Gemini's data was
 complete. Anyone can create a `Market` for a subject, so consumers must pin the authority they trust.
 
-Not compiled yet (no Rust toolchain on the Mac it was written on). First build:
+## Build / deploy status (Windows)
+
+Programs compile to `target/deploy/{odds_receipt,safe_payout}.so`. Program IDs (from the
+checked-in keypairs) stay:
+
+- `odds_receipt` = `HvV3TjjxoCwNyb7a3W5ikC18RPbDkaGAfYHzKPYyqdur`
+- `safe_payout` = `HPx7jxgxjDBiTKdNX1PfFcuHg41XepqayFGsUzQkZ1fB`
 
 ```bash
-# one-time: install Rust, the Solana CLI and Anchor (see https://www.anchor-lang.com/docs/installation)
-solana config set --url devnet && solana airdrop 2
-anchor build && anchor keys sync && anchor build
-anchor deploy --provider.cluster devnet
+# From programs/ (PowerShell: $env:HOME = $env:USERPROFILE)
+# Cargo.lock pins blake3/indexmap/zeroize/unicode-segmentation for platform-tools rustc 1.79
+cargo-build-sbf --manifest-path programs/odds_receipt/Cargo.toml
+cargo-build-sbf --manifest-path programs/safe_payout/Cargo.toml
+
+# Local demo (unlimited SOL):
+solana-test-validator --reset
+solana program deploy target/deploy/odds_receipt.so --program-id target/deploy/odds_receipt-keypair.json --url localhost
+solana program deploy target/deploy/safe_payout.so --program-id target/deploy/safe_payout-keypair.json --url localhost
+
+# Public devnet (needs faucet SOL on the CLI wallet):
+solana config set --url devnet
+solana airdrop 2   # or https://faucet.solana.com / https://faucet.quicknode.com/solana/devnet
+solana program deploy target/deploy/odds_receipt.so --program-id target/deploy/odds_receipt-keypair.json
+solana program deploy target/deploy/safe_payout.so --program-id target/deploy/safe_payout-keypair.json
 ```
 
-Then put the `odds_receipt` program ID in `backend/.env` (`ODDS_RECEIPT_PROGRAM_ID`) and the
-authority keypair path in `RECEIPT_AUTHORITY_KEYPAIR`. Instruction byte layouts must stay in sync
-with `backend/thin_ice/receipts.py`; `backend/tests/test_scoring.py` checks the Python side.
+Put the `odds_receipt` program ID in `backend/.env` (`ODDS_RECEIPT_PROGRAM_ID`) and the
+authority keypair path in `RECEIPT_AUTHORITY_KEYPAIR` (usually `~/.config/solana/id.json`).
+For local validator minting, set `SOLANA_RPC=http://127.0.0.1:8899`.
+
+Instruction byte layouts must stay in sync with `backend/thin_ice/receipts.py`;
+`backend/tests/test_scoring.py` checks the Python side.

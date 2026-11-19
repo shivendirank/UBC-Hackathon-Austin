@@ -134,10 +134,14 @@ def open_move_incident(conn, symbol: str, move: dict, now: int) -> None:
     notify_grok(cur.lastrowid, "unusual_move", symbol, "Unusual move on a thin book.")
 
 
-def notify_grok(incident_id: int, kind: str, subject: str, summary: str) -> None:
-    """POST to the Grok Bot routine webhook. Never blocks recording on failure. [verify payload format]"""
+def notify_grok(incident_id: int, kind: str, subject: str, summary: str) -> Optional[bool]:
+    """POST to the Grok Bot routine webhook.
+
+    Returns True on HTTP 200, False on transport/non-200 failure, None if webhook unset.
+    Never raises — recording and the dashboard button treat failure as soft. [verify payload format]
+    """
     if not config.GROK_ROUTINE_WEBHOOK:
-        return
+        return None
     headers = {"Authorization": f"Bearer {config.GROK_ROUTINE_TOKEN}"} if config.GROK_ROUTINE_TOKEN else {}
     body = {
         "incident_id": incident_id, "kind": kind, "subject": subject, "summary": summary,
@@ -146,9 +150,32 @@ def notify_grok(incident_id: int, kind: str, subject: str, summary: str) -> None
                         "Describe liquidity, not intent; never allege manipulation.",
     }
     try:
-        httpx.post(config.GROK_ROUTINE_WEBHOOK, json=body, headers=headers, timeout=5)
+        r = httpx.post(config.GROK_ROUTINE_WEBHOOK, json=body, headers=headers, timeout=10)
+        if r.status_code == 200:
+            return True
+        log.warning("grok webhook HTTP %s: %s", r.status_code, r.text[:200])
+        return False
     except httpx.HTTPError as exc:
         log.warning("grok webhook failed: %s", exc)
+        return False
+
+
+def request_investigation(conn, incident_id: int) -> dict:
+    """Dashboard / API wake-up: timeline note + webhook POST. Raises LookupError / RuntimeError / ConnectionError."""
+    inc = get_incident(conn, incident_id)
+    if not inc:
+        raise LookupError(incident_id)
+    if not config.GROK_ROUTINE_WEBHOOK:
+        raise RuntimeError("grok_webhook_unset")
+    now = int(time.time())
+    with db.tx(conn):
+        _append(conn, incident_id, now, "investigation_requested", {"via": "dashboard"})
+    label = "Unusual move on a thin book." if inc["kind"] == "unusual_move" else (
+        (inc.get("latest_check") or {}).get("summary") or "Related prices disagree.")
+    ok = notify_grok(incident_id, inc["kind"], inc["subject"], label)
+    if ok is not True:
+        raise ConnectionError("grok_webhook_failed")
+    return {"ok": True, "notified": True, "incident_id": incident_id}
 
 
 # ---------- read / report ----------
