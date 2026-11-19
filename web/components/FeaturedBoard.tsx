@@ -30,7 +30,7 @@ export function FeaturedBoard({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div>
           <div className="flex items-start gap-3">
-            <Sticker category={board.category} title={board.title} ticker={lead.event_ticker} className="h-16 w-16 shrink-0" animated />
+            <Sticker category={board.category} title={board.title} ticker={lead.event_ticker} className="h-11 w-11 shrink-0" animated />
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-semibold text-white">{board.title}</h2>

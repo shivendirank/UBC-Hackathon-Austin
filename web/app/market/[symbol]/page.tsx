@@ -35,7 +35,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
         <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div>
             <div className="group flex items-start gap-3">
-              <Sticker category={m.category} title={m.event_title} ticker={m.event_ticker} className="h-16 w-16 shrink-0" animated />
+              <Sticker category={m.category} title={m.event_title} ticker={m.event_ticker} className="h-11 w-11 shrink-0" animated />
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-semibold text-white">{m.event_title}</h1>

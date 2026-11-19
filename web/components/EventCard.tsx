@@ -29,7 +29,7 @@ export function EventCard({
     <article className="group flex h-full flex-col rounded-[20px] border border-white/10 bg-[#12141a] p-5 transition-colors duration-300 hover:border-white/25">
       <div className="flex flex-1 flex-col">
       <div className="flex items-start gap-3">
-        <Sticker category={board.category} title={board.title} ticker={lead.event_ticker} className="h-14 w-14 shrink-0" />
+        <Sticker category={board.category} title={board.title} ticker={lead.event_ticker} className="h-10 w-10 shrink-0" />
         <div className="min-w-0 flex-1">
           <h2 className="text-base font-semibold leading-snug text-white">
             <Link href={`/market/${encodeURIComponent(lead.symbol)}`} className="hover:text-[#9aebff]">

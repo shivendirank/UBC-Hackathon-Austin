@@ -31,7 +31,7 @@ export function SiteHeader() {
       <header className="sticky top-0 z-30 border-b border-white/10 bg-[#07080a]/95 backdrop-blur">
         <div className="mx-auto flex h-16 w-full max-w-[1680px] items-center px-6 lg:px-8">
           <Link href="/" className="group flex items-center gap-2.5">
-            <Sticker category={null} className="h-8 w-8" />
+            <Sticker category={null} className="h-6 w-6" />
             <span className="text-[13px] font-semibold uppercase tracking-[0.22em] text-white">Thin Ice</span>
           </Link>
         </div>
@@ -43,7 +43,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-30 border-b border-white/10 bg-[#07080a]/95 backdrop-blur">
       <div className="mx-auto flex h-16 w-full max-w-[1680px] items-center gap-6 px-6 lg:px-8">
         <Link href="/" className="group flex shrink-0 items-center gap-2.5">
-          <Sticker category={null} className="h-8 w-8" />
+          <Sticker category={null} className="h-6 w-6" />
           <span className="text-[13px] font-semibold uppercase tracking-[0.22em] text-white">Thin Ice</span>
         </Link>
         <nav className="flex min-w-0 items-center gap-5 overflow-x-auto" aria-label="Primary">

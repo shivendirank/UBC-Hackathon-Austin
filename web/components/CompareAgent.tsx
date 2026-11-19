@@ -8,9 +8,10 @@ import { WidgetHost } from "@/components/copilot/WidgetHost";
 import { useActiveMarket } from "@/lib/active-market";
 import { createCopilotSession, fetchCopilotStatus } from "@/lib/copilot-api";
 import { buildClientTools } from "@/lib/copilot-tools";
+import { useWakeWord, wakeWordSupported } from "@/lib/use-wake-word";
 import { useWidgets } from "@/lib/widgets";
 
-type Msg = { role: "user" | "agent" | "system"; text: string };
+type Msg = { role: "user" | "agent" | "system"; text: string; eventId?: number };
 
 /**
  * Jag's Strands orb + Thin Ice ElevenLabs session/tools/widgets.
@@ -25,15 +26,37 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [voiceConfigured, setVoiceConfigured] = useState(false);
+  const [wakeArmed, setWakeArmed] = useState(false);
+  const [needsWakeGesture, setNeedsWakeGesture] = useState(false);
   const [question, setQuestion] = useState("");
   const [level, setLevel] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "agent",
-      text: "Activate voice for ElevenLabs, or ask in text. I use Thin Ice tools for real grades — I don’t invent odds.",
+      text: "Say “Hey Gemini” to start voice (no click on the orb). I use Thin Ice tools for real grades — I don’t invent odds.",
     },
   ]);
   const sessionBusy = useRef(false);
+  const activateRef = useRef<() => Promise<void>>(async () => {});
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, open]);
+
+  const appendTranscript = useCallback((role: Msg["role"], text: string, eventId?: number) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    setMessages((m) => {
+      if (eventId != null && m.some((x) => x.eventId === eventId)) return m;
+      const last = m[m.length - 1];
+      if (last && last.role === role && last.text === trimmed) return m;
+      return [...m, { role, text: trimmed, eventId }];
+    });
+    setOpen(true);
+  }, []);
 
   const tools = useMemo(
     () =>
@@ -70,7 +93,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   }, [status]);
 
   const connected = status === "connected";
-  const listening = connected || busy;
+  const listening = connected || busy || wakeArmed;
 
   const activate = useCallback(async () => {
     if (sessionBusy.current) return;
@@ -113,18 +136,107 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       };
       if (sess.signed_url) opts.signedUrl = sess.signed_url;
       else if (sess.agent_id) opts.agentId = sess.agent_id;
-      await startSession(opts as Parameters<typeof startSession>[0]);
-      setMessages((m) => [...m, { role: "agent", text: "Listening. Ask about a market, liquidity, or compare." }]);
+      await startSession({
+        ...(opts as Parameters<typeof startSession>[0]),
+        onMessage: ({ message, role, event_id }) => {
+          appendTranscript(role === "user" ? "user" : "agent", message, event_id);
+        },
+        onModeChange: ({ mode }) => {
+          setLevel(mode === "speaking" ? 1 : 0.65);
+        },
+      });
+      appendTranscript("system", "Listening. Speak, or type below — both show in the transcript.");
     } catch (e) {
-      setMessages((m) => [
-        ...m,
-        { role: "agent", text: e instanceof Error ? e.message : "Could not start voice session" },
-      ]);
+      appendTranscript("agent", e instanceof Error ? e.message : "Could not start voice session");
     } finally {
       setBusy(false);
       sessionBusy.current = false;
     }
-  }, [symbol, symbols, title, tools, startSession]);
+  }, [symbol, symbols, title, tools, startSession, appendTranscript]);
+
+  activateRef.current = activate;
+
+  const {
+    supported: wakeSupported,
+    listening: wakeListening,
+    lastHeard,
+  } = useWakeWord({
+    enabled: wakeArmed,
+    paused: connected || busy,
+    onWake: () => {
+      if (!voiceConfigured) {
+        setOpen(true);
+        appendTranscript("system", "Wake heard, but ElevenLabs is not configured.");
+        return;
+      }
+      appendTranscript("system", "Wake word heard — starting ElevenLabs…");
+      setOpen(true);
+      void activateRef.current();
+    },
+  });
+
+  const armWake = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!wakeWordSupported()) {
+      setNeedsWakeGesture(false);
+      return false;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop()); // free mic for SpeechRecognition / ElevenLabs
+    } catch {
+      if (!opts?.silent) {
+        setOpen(true);
+        appendTranscript("system", "Microphone permission is required for “Hey Gemini”.");
+      }
+      setNeedsWakeGesture(true);
+      return false;
+    }
+    setWakeArmed(true);
+    setNeedsWakeGesture(false);
+    try {
+      sessionStorage.setItem("thin_ice_wake_armed", "1");
+    } catch {
+      /* private mode */
+    }
+    if (!opts?.silent) {
+      appendTranscript("system", "Listening for “Hey Gemini” — no need to touch the orb.");
+    }
+    return true;
+  }, [appendTranscript]);
+
+  // Hands-free: auto-arm if mic already allowed; else one click anywhere on the page (not the orb).
+  useEffect(() => {
+    if (!wakeWordSupported()) return;
+    let cancelled = false;
+
+    const tryAuto = async () => {
+      try {
+        const perm = await navigator.permissions?.query({ name: "microphone" as PermissionName });
+        if (cancelled) return;
+        if (perm?.state === "granted" || sessionStorage.getItem("thin_ice_wake_armed") === "1") {
+          await armWake({ silent: true });
+          return;
+        }
+      } catch {
+        /* permissions API missing */
+      }
+      if (!cancelled) setNeedsWakeGesture(true);
+    };
+
+    void tryAuto();
+
+    const onFirstGesture = () => {
+      void armWake({ silent: true });
+    };
+    window.addEventListener("pointerdown", onFirstGesture, { once: true, capture: true });
+    window.addEventListener("keydown", onFirstGesture, { once: true, capture: true });
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("pointerdown", onFirstGesture, true);
+      window.removeEventListener("keydown", onFirstGesture, true);
+    };
+  }, [armWake]);
 
   const endVoice = useCallback(async () => {
     sessionBusy.current = false;
@@ -133,19 +245,19 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     } catch {
       /* none */
     }
-    setMessages((m) => [...m, { role: "system", text: "Voice ended." }]);
+    setMessages((m) => [...m, { role: "system", text: "Voice ended. Wake word listening resumes if armed." }]);
   }, [endSession]);
 
   const askText = useCallback(async () => {
     const q = question.trim();
     if (!q) return;
     setQuestion("");
-    setMessages((m) => [...m, { role: "user", text: q }]);
+    appendTranscript("user", q);
     setBusy(true);
     try {
       if (connected && sendUserMessage) {
         await sendUserMessage(q);
-        setMessages((m) => [...m, { role: "system", text: "Sent to ElevenLabs…" }]);
+        // Agent reply arrives via onMessage into the transcript
       } else {
         // Offline / no voice: run Thin Ice tools directly
         const lower = q.toLowerCase();
@@ -159,57 +271,96 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
         } else {
           reply = await tools.get_market_analysis({ query: q });
         }
-        setMessages((m) => [...m, { role: "agent", text: reply }]);
+        appendTranscript("agent", reply);
       }
     } catch (e) {
-      setMessages((m) => [
-        ...m,
-        { role: "agent", text: e instanceof Error ? e.message : "Request failed" },
-      ]);
+      appendTranscript("agent", e instanceof Error ? e.message : "Request failed");
     } finally {
       setBusy(false);
     }
-  }, [question, connected, sendUserMessage, tools]);
+  }, [question, connected, sendUserMessage, tools, appendTranscript]);
+
+  const chip =
+    "rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs text-[#e8eef4] backdrop-blur-md transition hover:border-white/30 hover:bg-white/[0.1]";
 
   return (
     <>
       <WidgetHost />
       <div className="pointer-events-none fixed top-[10vh] right-4 z-40 flex flex-col items-end gap-3 sm:right-6">
         {open && (
-          <div className="pointer-events-auto w-[min(100vw-2rem,22rem)] overflow-hidden rounded-[24px] border border-white/15 bg-[#0c0e12]/95 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-white">Thin Ice agent</p>
-                <p className="text-[11px] text-[#8b95a1]">
-                  Strands · ElevenLabs {voiceConfigured ? (connected ? "· live" : "· ready") : "· not configured"}
+          <div className="pointer-events-auto w-[min(100vw-2rem,23rem)] overflow-hidden rounded-[22px] border border-white/20 bg-[rgba(12,16,22,0.55)] shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-inset ring-white/10 backdrop-blur-2xl">
+            <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold tracking-tight text-white">Thin Ice agent</p>
+                <p className="mt-0.5 text-[11px] text-[#9aa3ad]">
+                  {connected
+                    ? "Voice live · transcript below"
+                    : wakeArmed && wakeListening
+                      ? "Listening for “Hey Gemini”"
+                      : wakeArmed
+                        ? "Wake armed · say “Hey Gemini”"
+                        : voiceConfigured
+                          ? "Voice ready"
+                          : "Voice not configured"}
                 </p>
               </div>
-              <button type="button" onClick={() => setOpen(false)} className="text-xs text-[#8b95a1] hover:text-white">
-                Close
-              </button>
-            </div>
-            <div className="max-h-64 space-y-3 overflow-y-auto px-4 py-3">
-              {messages.map((m, i) => (
-                <div
-                  key={i}
-                  className={`text-sm leading-relaxed ${
-                    m.role === "user" ? "text-[#9aebff]" : m.role === "system" ? "text-[#8b95a1]" : "text-[#d7dde4]"
+              <div className="flex items-center gap-2">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    connected
+                      ? "bg-[#9aebff] shadow-[0_0_10px_rgba(154,235,255,0.7)]"
+                      : wakeListening
+                        ? "animate-pulse bg-[#9aebff]/80"
+                        : "bg-white/25"
                   }`}
+                  aria-hidden
+                />
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="rounded-full px-2 py-1 text-xs text-[#9aa3ad] transition hover:bg-white/10 hover:text-white"
                 >
-                  <span className="text-[10px] uppercase tracking-wide text-[#6f7882]">
-                    {m.role === "user" ? "You" : m.role === "system" ? "Status" : "Agent"}
-                  </span>
-                  <p className="mt-0.5 whitespace-pre-wrap">{m.text}</p>
-                </div>
-              ))}
+                  Close
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2 border-t border-white/10 px-3 pt-3">
+
+            <div ref={transcriptRef} className="max-h-72 space-y-2.5 overflow-y-auto px-3 py-3">
+              {messages.map((m, i) => {
+                const isUser = m.role === "user";
+                const isSystem = m.role === "system";
+                return (
+                  <div
+                    key={m.eventId != null ? `e-${m.eventId}` : `i-${i}`}
+                    className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={[
+                        "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed shadow-sm",
+                        isUser
+                          ? "rounded-br-md border border-[#9aebff]/25 bg-[#9aebff]/15 text-[#e8f9ff]"
+                          : isSystem
+                            ? "border border-white/10 bg-white/[0.04] text-[#9aa3ad]"
+                            : "rounded-bl-md border border-white/12 bg-white/[0.08] text-[#e6ebf0]",
+                      ].join(" ")}
+                    >
+                      <p className="mb-1 text-[10px] font-medium text-[#8b95a1]">
+                        {isUser ? "You" : isSystem ? "Status" : "Agent"}
+                      </p>
+                      <p className="whitespace-pre-wrap">{m.text}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex flex-wrap gap-2 border-t border-white/10 bg-white/[0.03] px-3 py-3">
               {!connected ? (
                 <button
                   type="button"
                   onClick={() => void activate()}
                   disabled={busy}
-                  className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-[#101216] disabled:opacity-50"
+                  className="rounded-full bg-[#9aebff] px-3.5 py-1.5 text-xs font-semibold text-[#0b1016] transition hover:bg-[#b5f1ff] disabled:opacity-50"
                 >
                   Activate voice
                 </button>
@@ -217,51 +368,57 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
                 <button
                   type="button"
                   onClick={() => void endVoice()}
-                  className="rounded-full bg-[#3a1c24] px-3 py-1.5 text-xs font-semibold text-[#ff8b98]"
+                  className="rounded-full border border-[#ff8b98]/35 bg-[#ff8b98]/15 px-3.5 py-1.5 text-xs font-semibold text-[#ffb3bc]"
                 >
                   End voice
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => void tools.open_market_widget({})}
-                className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white hover:border-white/30"
-              >
+              {wakeSupported && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (wakeArmed) {
+                      setWakeArmed(false);
+                      appendTranscript("system", "Wake word disarmed.");
+                    } else {
+                      void armWake();
+                    }
+                  }}
+                  disabled={connected}
+                  className={`${chip} disabled:opacity-40 ${wakeArmed ? "border-[#9aebff]/40 text-[#9aebff]" : ""}`}
+                >
+                  {wakeArmed ? "Wake on" : "Arm wake"}
+                </button>
+              )}
+              <button type="button" onClick={() => void tools.open_market_widget({})} className={chip}>
                 Overview
               </button>
-              <button
-                type="button"
-                onClick={() => void tools.show_liquidity_chart({})}
-                className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white hover:border-white/30"
-              >
+              <button type="button" onClick={() => void tools.show_liquidity_chart({})} className={chip}>
                 Liquidity
               </button>
-              <button
-                type="button"
-                onClick={() => void tools.open_comparison_widget({})}
-                className="rounded-full border border-white/15 px-3 py-1.5 text-xs text-white hover:border-white/30"
-              >
+              <button type="button" onClick={() => void tools.open_comparison_widget({})} className={chip}>
                 Compare
               </button>
             </div>
+
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void askText();
               }}
-              className="border-t border-white/10 p-3"
+              className="border-t border-white/10 bg-white/[0.04] p-3"
             >
-              <div className="flex gap-2">
+              <div className="flex gap-2 rounded-2xl border border-white/15 bg-black/25 p-1.5 backdrop-blur-md">
                 <input
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
                   placeholder="Ask about a market…"
-                  className="h-10 flex-1 rounded-full border border-white/10 bg-[#1a1d24] px-3 text-sm text-white outline-none placeholder:text-[#6f7882]"
+                  className="h-9 flex-1 rounded-xl bg-transparent px-3 text-sm text-white outline-none placeholder:text-[#6f7882]"
                 />
                 <button
                   type="submit"
                   disabled={busy}
-                  className="h-10 rounded-full bg-white px-3 text-xs font-semibold text-[#101216] disabled:opacity-50"
+                  className="h-9 rounded-xl bg-white/90 px-3.5 text-xs font-semibold text-[#101216] transition hover:bg-white disabled:opacity-50"
                 >
                   Ask
                 </button>
@@ -270,14 +427,28 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           </div>
         )}
 
+        {needsWakeGesture && wakeSupported && !wakeArmed && (
+          <p className="pointer-events-none max-w-[12rem] rounded-xl border border-white/15 bg-[rgba(12,16,22,0.65)] px-3 py-2 text-right text-[10px] leading-snug text-[#c5ced6] backdrop-blur-md">
+            Click anywhere once to enable mic — then just say “Hey Gemini”
+          </p>
+        )}
+
+        {wakeArmed && !connected && (
+          <p className="pointer-events-none max-w-[11rem] text-right text-[10px] leading-snug text-[#9aa3ad]">
+            {wakeListening ? "Listening — say “Hey Gemini”" : "Starting wake listener…"}
+            {lastHeard ? <span className="mt-0.5 block truncate text-[#6f7882]">Heard: {lastHeard}</span> : null}
+          </p>
+        )}
+
         <button
           type="button"
-          onClick={() => {
-            setOpen((v) => !v);
-            if (!open && !connected) void activate();
-          }}
-          aria-label="Open Thin Ice agent"
-          className="pointer-events-auto h-[88px] w-[88px] overflow-hidden rounded-full border border-white/15 bg-[#0c0e12]/70 shadow-[0_12px_40px_rgba(0,0,0,0.45)] backdrop-blur transition hover:border-white/30 sm:h-[104px] sm:w-[104px]"
+          onClick={() => setOpen((v) => !v)}
+          aria-label="Open Thin Ice agent transcript"
+          className={`pointer-events-auto h-[88px] w-[88px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[104px] sm:w-[104px] ${
+            wakeListening && !connected
+              ? "border-[#9aebff]/50 ring-[#9aebff]/20"
+              : "border-white/25 ring-white/15 hover:border-white/40"
+          }`}
         >
           <div className="relative h-full w-full">
             <Strands
