@@ -96,7 +96,7 @@ export function InvestigatePanel({ incidentId, initial }: Props) {
   const prompt = `Recheck Thin Ice incident ${incidentId} with get_incident and recheck, then submit_report with sources.`;
 
   return (
-    <div className="mt-2 rounded-lg border border-white/10 bg-[#12141a] p-4 text-sm text-[#c5ced6]">
+    <div className="mt-2 rounded-lg surface-card p-4 text-sm text-[#c5ced6]">
       <div className="flex flex-wrap items-center gap-3">
         <p className="font-medium text-white">
           {phase === "waiting" ? "Grok Bot is investigating…" : "Investigation"}

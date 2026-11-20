@@ -100,8 +100,24 @@ def elevenlabs_configured() -> bool:
     return bool(config.ELEVENLABS_API_KEY and config.ELEVENLABS_AGENT_ID)
 
 
+# Keep the TLS connection warm. A fresh client on every "Hey Gemini" adds a full handshake
+# before the browser can open the mic.
+_http: httpx.Client | None = None
+
+
+def _eleven_client() -> httpx.Client:
+    global _http
+    if _http is None:
+        _http = httpx.Client(timeout=8.0)
+    return _http
+
+
 def create_elevenlabs_session(context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    """Mint a short-lived conversation token/signed URL. Never returns the API key."""
+    """Mint a short-lived WebSocket signed URL. Never returns the API key.
+
+    The browser starts the session with this URL. A WebRTC token was slower to
+    reach a live mic here, so the open path stays on the signed URL.
+    """
     if not elevenlabs_configured():
         return {
             "configured": False,
@@ -109,46 +125,32 @@ def create_elevenlabs_session(context: Optional[dict[str, Any]] = None) -> dict[
         }
 
     agent_id = config.ELEVENLABS_AGENT_ID
-    headers = {"xi-api-key": config.ELEVENLABS_API_KEY, "Content-Type": "application/json"}
-    body: dict[str, Any] = {}
-    if context:
-        # Dynamic variables the agent prompt can reference once configured in the ElevenLabs console.
-        body["conversation_config_override"] = {
-            "agent": {
-                "prompt": {
-                    "prompt": (
-                        "You are Thin Ice Copilot. Use tools for market numbers; never invent liquidity or odds. "
-                        f"Current app context JSON: {json.dumps(context)[:4000]}"
-                    )
-                }
-            }
-        }
-
-    # Prefer conversation token endpoint; fall back to agent id for client-side startSession.
-    url = f"https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id={agent_id}"
+    headers = {"xi-api-key": config.ELEVENLABS_API_KEY}
+    signed_url = f"https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id={agent_id}"
     try:
-        with httpx.Client(timeout=20.0) as client:
-            r = client.get(url, headers=headers)
-            if r.status_code == 200:
-                data = r.json()
-                return {
-                    "configured": True,
-                    "agent_id": agent_id,
-                    "signed_url": data.get("signed_url"),
-                    "context": context or {},
-                }
-            # Some accounts use get_conversation_token instead; surface the error honestly.
+        response = _eleven_client().get(signed_url, headers=headers)
+        if response.status_code == 200:
+            data = response.json()
             return {
                 "configured": True,
                 "agent_id": agent_id,
-                "signed_url": None,
-                "error": f"ElevenLabs signed-url HTTP {r.status_code}: {r.text[:300]}",
+                "conversation_token": None,
+                "signed_url": data.get("signed_url"),
                 "context": context or {},
             }
+        return {
+            "configured": True,
+            "agent_id": agent_id,
+            "conversation_token": None,
+            "signed_url": None,
+            "error": f"ElevenLabs signed-url HTTP {response.status_code}: {response.text[:300]}",
+            "context": context or {},
+        }
     except httpx.HTTPError as e:
         return {
             "configured": True,
             "agent_id": agent_id,
+            "conversation_token": None,
             "signed_url": None,
             "error": f"ElevenLabs request failed: {e}",
             "context": context or {},

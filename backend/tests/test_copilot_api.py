@@ -57,3 +57,52 @@ def test_copilot_unconfigured_session_and_analysis(tmp_path, monkeypatch):
     assert cmp_["markets"][0]["symbol"] == "GEMI-BTC-A"
     assert c.get("/api/copilot/markets/NOPE/analysis").status_code == 404
     assert c.get("/api/copilot/resolve", params={"q": "zzzz-no-such"}).status_code == 404
+
+
+def test_copilot_session_reuses_client_for_signed_url(tmp_path, monkeypatch):
+    """Voice should get a signed URL from one kept-alive client, ready before the wake word."""
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "c.db"))
+    monkeypatch.setenv("SNAPSHOT_DIR", str(tmp_path / "snaps"))
+    monkeypatch.setenv("ADMIN_TOKEN", "secret")
+    monkeypatch.setenv("ODDS_RECEIPT_PROGRAM_ID", "")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
+    monkeypatch.setenv("ELEVENLABS_AGENT_ID", "agent-1")
+    from thin_ice import config
+    importlib.reload(config)
+    from thin_ice import copilot, api
+    importlib.reload(copilot)
+    importlib.reload(api)
+
+    constructed: list[int] = []
+    urls: list[str] = []
+
+    class FakeResponse:
+        def __init__(self, status_code: int, payload: dict):
+            self.status_code = status_code
+            self._payload = payload
+            self.text = ""
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            constructed.append(1)
+
+        def get(self, url, headers=None):
+            urls.append(url)
+            assert headers["xi-api-key"] == "test-key"
+            return FakeResponse(200, {"signed_url": "wss://example.test/conv"})
+
+    monkeypatch.setattr(copilot.httpx, "Client", FakeClient)
+    from fastapi.testclient import TestClient
+
+    client = TestClient(api.app)
+    sess = client.post("/api/copilot/session", json={"symbol": "GEMI-BTC-A"}).json()
+    assert sess["configured"] is True
+    assert sess["signed_url"] == "wss://example.test/conv"
+    assert sess["conversation_token"] is None
+    again = client.post("/api/copilot/session", json={}).json()
+    assert again["signed_url"] == "wss://example.test/conv"
+    assert constructed == [1]
+    assert urls and all("get-signed-url" in url for url in urls)

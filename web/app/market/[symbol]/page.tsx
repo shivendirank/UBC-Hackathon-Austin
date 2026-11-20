@@ -32,7 +32,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
   return (
     <main className="mx-auto w-full max-w-[1680px] px-6 py-6 lg:px-8">
       <Link href="/" className="text-sm font-medium text-[#9aebff] hover:underline">All markets</Link>
-      <section className="mt-4 rounded-[24px] border border-white/[0.08] bg-[#12141a] p-6 lg:p-8">
+      <section className="mt-4 rounded-[24px] surface-card p-6 lg:p-8">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <div>
             <div className="group flex items-start gap-3">
@@ -50,16 +50,16 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
                 Synthetic replay. This order book was written for the demo. It was not read from Gemini.
               </p>
             )}
-            <div className="mt-5 rounded-2xl border border-white/10 bg-[#1a1d24] px-4 py-3">
-              <div className="flex items-start justify-between gap-3">
+            <div className="mt-5">
+              <div className="flex items-baseline justify-between gap-3">
                 <div>
                   <span className="block text-sm font-medium text-[#d7dde4]">{m.label}</span>
                   <span className="mt-1 block text-xs text-[#8b95a1]">YES</span>
-                  <span className="mt-1 block text-4xl font-semibold tabular-nums text-white">{m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"}</span>
+                  <span className="mt-1 block text-4xl font-bold tabular-nums tracking-tight text-white">{m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"}</span>
                 </div>
                 <div className="text-right">
                   <GradePill grade={m.grade} size="lg" />
-                  <span className="mt-2 block text-xs text-[#8b95a1]">Depth grade</span>
+                  <span className="mt-1 block text-xs text-[#8b95a1]">Depth grade</span>
                 </div>
               </div>
               <span className="mt-2 block text-sm text-[#9aa3ad]">
@@ -123,7 +123,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
       </section>
 
       <section id="evidence" className="mt-8 grid gap-4 lg:grid-cols-2">
-        <article className="rounded-[20px] border border-white/10 bg-[#12141a] p-5">
+        <article className="rounded-[20px] surface-card p-5">
           <h2 className="text-lg font-semibold">Why this reading</h2>
           <ul className="mt-3 space-y-2 text-sm text-[#c5ced6]">
             {verdict.evidence.map((line) => <li key={line}>{line}</li>)}
@@ -134,7 +134,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
             {notes.map((r) => <li key={r}>{r}</li>)}
           </ul>
         </article>
-        <article id="history" className="rounded-[20px] border border-white/10 bg-[#12141a] p-5">
+        <article id="history" className="rounded-[20px] surface-card p-5">
           <h2 className="text-lg font-semibold">Price and liquidity history</h2>
           <p className="mt-1 text-sm text-[#9aa3ad]">Stored observations only.</p>
           <div className="mt-3">
@@ -142,7 +142,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
           </div>
           <MoveCostChart points={m.history} />
         </article>
-        <article className="rounded-[20px] border border-white/10 bg-[#12141a] p-5">
+        <article className="rounded-[20px] surface-card p-5">
           <h2 className="text-lg font-semibold">Investigation</h2>
           {!investigation ? (
             <p className="mt-2 text-sm text-[#9aa3ad]">No Grok Bot investigation has been filed for this contract.</p>
@@ -161,7 +161,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
             </div>
           )}
         </article>
-        <article className="rounded-[20px] border border-white/10 bg-[#12141a] p-5">
+        <article className="rounded-[20px] surface-card p-5">
           <h2 className="text-lg font-semibold">What you can do</h2>
           <ul className="mt-3 space-y-2 text-sm">
             <li><Link href={`/compare?symbol=${encodeURIComponent(m.symbol)}`} className="text-white underline decoration-white/30 underline-offset-4">Compare related markets</Link></li>
@@ -175,7 +175,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
         </article>
       </section>
 
-      <details id="advanced" className="mt-8 rounded-[20px] border border-white/10 bg-[#12141a] p-5">
+      <details id="advanced" className="mt-8 rounded-[20px] surface-card p-5">
         <summary className="cursor-pointer text-lg font-semibold">Advanced details</summary>
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <Stat label="Push up 10¢" value={usd(s.cost_up_usd)} />
@@ -211,7 +211,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
         <MoveCostChart points={m.history} />
       </details>
 
-      <section id="verify" className="mt-10 rounded-2xl border border-[#2a2e36] bg-[#121418] p-4">
+      <section id="verify" className="mt-10 rounded-2xl surface-inset p-4">
         <h2 className="text-lg font-semibold">Verify assessment</h2>
         <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
           A receipt pins Thin Ice&apos;s reading of the book. It does not prove Gemini&apos;s market data by itself.

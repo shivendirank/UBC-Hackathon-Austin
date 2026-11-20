@@ -62,7 +62,7 @@ export default async function ComparePage(props: {
       )}
 
       <div className="mt-8 grid gap-5 lg:grid-cols-2">
-        <section className="rounded-[24px] border border-white/10 bg-[#12141a] p-5">
+        <section className="rounded-[24px] surface-card p-5">
           <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[#8b95a1]">1 · Choose a market</h2>
           <ul className="mt-4 max-h-[70vh] space-y-2 overflow-y-auto pr-1">
             {leftList.map((m) => {
@@ -72,7 +72,7 @@ export default async function ComparePage(props: {
                   <Link
                     href={`/compare?symbol=${encodeURIComponent(m.symbol)}`}
                     className={`flex items-center gap-3 rounded-2xl border px-3 py-3 transition-colors ${
-                      on ? "border-white bg-[#1c2128]" : "border-white/10 bg-[#1a1d24] hover:border-white/25"
+                      on ? "border-white surface-inset" : "border-white/10 surface-inset hover:brightness-110"
                     }`}
                   >
                     <GradePill grade={m.grade} />
@@ -90,7 +90,7 @@ export default async function ComparePage(props: {
           </ul>
         </section>
 
-        <section className="rounded-[24px] border border-white/10 bg-[#12141a] p-5">
+        <section className="rounded-[24px] surface-card p-5">
           <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-[#8b95a1]">2 · Pick a similar market</h2>
           {!selected ? (
             <p className="mt-10 text-sm text-[#8b95a1]">Select a market on the left to see related contracts you can compare.</p>
@@ -107,7 +107,7 @@ export default async function ComparePage(props: {
                 <li key={item.market.symbol}>
                   <Link
                     href={`/compare?a=${encodeURIComponent(selected.symbol)}&b=${encodeURIComponent(item.market.symbol)}`}
-                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#1a1d24] px-3 py-3 transition-colors hover:border-white/30"
+                    className="flex items-center gap-3 rounded-2xl surface-inset px-3 py-3 transition-colors hover:border-white/30"
                   >
                     <GradePill grade={item.market.grade} />
                     <span className="min-w-0 flex-1">
@@ -190,11 +190,11 @@ async function SideBySide({
         <MarketPanel market={right} verdictTitle={rightVerdict.title} verdictReason={rightVerdict.reason} accent="#4c8dff" />
       </div>
 
-      <section className="mt-5 rounded-[24px] border border-white/10 bg-[#12141a] p-5 lg:p-6">
+      <section className="mt-5 rounded-[24px] surface-card p-5 lg:p-6">
         <h2 className="text-lg font-semibold text-white">Head-to-head</h2>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[36rem] text-left text-sm">
-            <thead className="border-b border-white/10 text-[#8b95a1]">
+            <thead className="border-b border-transparent text-[#8b95a1]">
               <tr>
                 <th className="py-2 pr-3 font-medium">Metric</th>
                 <th className="py-2 pr-3 font-medium">{left.label ?? left.symbol}</th>
@@ -231,7 +231,7 @@ async function SideBySide({
         </div>
 
         {story && (
-          <div className="mt-5 rounded-2xl border border-white/10 bg-[#1a1d24] p-4">
+          <div className="mt-5 rounded-2xl surface-inset p-4">
             <div className="flex flex-wrap items-center gap-2">
               {shared?.verified ? (
                 <span className="rounded-full bg-[#12382c] px-2.5 py-0.5 text-xs font-semibold text-[#8ee0b0]">Verified rule</span>
@@ -252,7 +252,7 @@ async function SideBySide({
         )}
       </section>
 
-      <section className="mt-5 rounded-[24px] border border-white/10 bg-[#12141a] p-5">
+      <section className="mt-5 rounded-[24px] surface-card p-5">
         <h2 className="text-lg font-semibold text-white">Odds over time</h2>
         <div className="mt-4">
           <LiveDualOddsChart
@@ -279,7 +279,7 @@ function MarketPanel({
   accent: string;
 }) {
   return (
-    <article className="rounded-[24px] border border-white/10 bg-[#12141a] p-5">
+    <article className="rounded-[24px] surface-card p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-[#8b95a1]">{market.category ?? "Market"}</p>

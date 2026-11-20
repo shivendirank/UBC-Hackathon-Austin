@@ -67,7 +67,7 @@ export default async function Home(props: PageProps<"/">) {
     <>
     <ForecastBar items={forecasts} />
     <main className="mx-auto w-full max-w-[1680px] px-6 py-6 lg:px-8">
-      <nav className="flex gap-1 overflow-x-auto border-b border-white/10 text-[13px]" aria-label="Categories">
+      <nav className="flex gap-1 overflow-x-auto text-[13px] font-medium" aria-label="Categories">
         <Chip href={q ? `/?q=${encodeURIComponent(q)}` : "/"} active={!category}>All</Chip>
         {categories.map((c) => (
           <Chip

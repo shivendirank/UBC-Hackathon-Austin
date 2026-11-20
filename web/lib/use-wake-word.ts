@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_WAKE_PHRASES, findWake, rollWakeText } from "@/lib/wake-word";
 
 /** Minimal SpeechRecognition shape (Chrome/Edge). */
 type SpeechRec = {
@@ -24,21 +25,6 @@ declare global {
   }
 }
 
-const DEFAULT_PHRASES = ["hey gemini", "ok gemini", "hi gemini"];
-
-function normalize(s: string) {
-  return s
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function matchesWake(transcript: string, phrases: string[]) {
-  const t = normalize(transcript);
-  return phrases.some((p) => t.includes(normalize(p)));
-}
-
 export function wakeWordSupported() {
   if (typeof window === "undefined") return false;
   return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -55,7 +41,7 @@ export function useWakeWord(opts: {
   onWake: () => void;
 }) {
   const { enabled, paused, onWake } = opts;
-  const phrases = opts.phrases ?? DEFAULT_PHRASES;
+  const phrases = opts.phrases ?? DEFAULT_WAKE_PHRASES;
   const [supported] = useState(() => wakeWordSupported());
   const [listening, setListening] = useState(false);
   const [lastHeard, setLastHeard] = useState<string | null>(null);
@@ -63,24 +49,38 @@ export function useWakeWord(opts: {
   const onWakeRef = useRef(onWake);
   const phrasesRef = useRef(phrases);
   const firingRef = useRef(false);
+  const recentRef = useRef("");
 
   onWakeRef.current = onWake;
   phrasesRef.current = phrases;
 
-  const stop = useCallback(() => {
+  const stop = useCallback((waitForRelease = false) => {
     const rec = recRef.current;
     recRef.current = null;
-    if (rec) {
+    setListening(false);
+    if (!rec) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      // Windows will not hand the mic to ElevenLabs until SpeechRecognition fires onend.
+      const timer = window.setTimeout(finish, waitForRelease ? 800 : 0);
+      rec.onresult = null;
+      rec.onerror = null;
+      rec.onend = () => {
+        window.clearTimeout(timer);
+        finish();
+      };
       try {
-        rec.onresult = null;
-        rec.onerror = null;
-        rec.onend = null;
         rec.stop();
       } catch {
-        /* already stopped */
+        window.clearTimeout(timer);
+        finish();
       }
-    }
-    setListening(false);
+    });
   }, []);
 
   const start = useCallback(() => {
@@ -99,17 +99,15 @@ export function useWakeWord(opts: {
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         chunk += ev.results[i]?.[0]?.transcript ?? "";
       }
-      const heard = chunk.trim();
+      const heard = rollWakeText(recentRef.current, chunk);
+      recentRef.current = heard;
       if (heard) setLastHeard(heard);
-      if (!matchesWake(chunk, phrasesRef.current)) return;
+      if (!findWake(heard, phrasesRef.current).matched) return;
       if (firingRef.current) return;
       firingRef.current = true;
-      try {
-        rec.stop();
-      } catch {
-        /* */
-      }
-      onWakeRef.current();
+      recentRef.current = "";
+      // Wait until recognition ends so it cannot restart and keep the mic.
+      void stop(true).then(() => onWakeRef.current());
       window.setTimeout(() => {
         firingRef.current = false;
       }, 2500);

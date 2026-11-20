@@ -58,14 +58,14 @@ function LoginForm() {
         <code className="text-[#c5ced6]">markets.csv</code>.
       </p>
 
-      <form onSubmit={onSubmit} className="mt-8 space-y-4 rounded-[24px] border border-white/10 bg-[#12141a] p-6">
+      <form onSubmit={onSubmit} className="mt-8 space-y-4 rounded-[24px] surface-card p-6">
         {mode === "register" && (
           <label className="block text-sm">
             <span className="text-[#8b95a1]">Name</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1 h-11 w-full rounded-xl border border-white/10 bg-[#1a1d24] px-3 text-white outline-none"
+              className="mt-1 h-11 w-full rounded-xl surface-inset px-3 text-white outline-none"
               autoComplete="name"
             />
           </label>
@@ -77,7 +77,7 @@ function LoginForm() {
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 h-11 w-full rounded-xl border border-white/10 bg-[#1a1d24] px-3 text-white outline-none"
+            className="mt-1 h-11 w-full rounded-xl surface-inset px-3 text-white outline-none"
             autoComplete="email"
           />
         </label>
@@ -88,7 +88,7 @@ function LoginForm() {
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 h-11 w-full rounded-xl border border-white/10 bg-[#1a1d24] px-3 text-white outline-none"
+            className="mt-1 h-11 w-full rounded-xl surface-inset px-3 text-white outline-none"
             autoComplete={mode === "login" ? "current-password" : "new-password"}
           />
         </label>

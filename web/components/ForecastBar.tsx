@@ -10,7 +10,7 @@ export function ForecastBar({ items }: { items: ForecastItem[] }) {
   if (items.length < 2) return null;
   const loop = [items, items];
   return (
-    <div className="flex items-center border-b border-white/10 bg-[#0c0e12]">
+    <div className="flex items-center border-b border-transparent bg-[#0c0e12]">
       <p className="shrink-0 pl-6 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8b95a1] lg:pl-8">
         Forecasts
       </p>

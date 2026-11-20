@@ -3,27 +3,166 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #07080a;
-  --foreground: #f4f6f8;
-  --paper: #14171c;
-  --muted: #8b95a1;
-  --line: #2a2e36;
+  --background: #0a0c10;
+  --foreground: #f2f4f6;
+  --paper: #12151c;
+  --muted: #9aa3ad;
+  --line: rgba(255, 255, 255, 0.08);
   --teal: #5ee0ff;
-  --ink: #f4f6f8;
+  --ink: #f2f4f6;
   color-scheme: dark;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-outfit);
-  --font-mono: var(--font-outfit);
+}
+
+html,
+body,
+button,
+input,
+textarea,
+select,
+option,
+a,
+p,
+span,
+li,
+label,
+td,
+th,
+summary,
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-sans), Syne, system-ui, sans-serif !important;
 }
 
 body {
-  background: var(--background);
+  background: transparent;
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.03em;
+  font-weight: 500;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  letter-spacing: -0.055em;
+  font-weight: 700;
+}
+
+/* Make Syne read clearly on every control / label */
+button,
+a,
+input,
+textarea,
+select {
+  letter-spacing: -0.03em;
+}
+
+.tabular-nums,
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "lnum" 1;
+  letter-spacing: -0.04em;
+  font-weight: 600;
+}
+
+/* Solid panels matched to canvas — no bright glass */
+.surface-card {
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  outline: none;
+  background: #12151c;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 16px 40px rgba(0, 0, 0, 0.35);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .surface-card:hover {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    box-shadow:
+      0 1px 0 rgba(255, 255, 255, 0.06) inset,
+      0 20px 48px rgba(0, 0, 0, 0.42);
+  }
+}
+
+.surface-inset {
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  background: #161a22;
+  box-shadow: none;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.glass-header {
+  border: none !important;
+  background: rgba(10, 12, 16, 0.92);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06);
+  @apply backdrop-blur-md;
+}
+
+/* Depth grade letter + ladder */
+.grade-stack {
+  font-family: var(--font-sans), Syne, system-ui, sans-serif !important;
+}
+
+.grade-mark {
+  display: inline-block;
+  line-height: 0.9;
+  font-family: var(--font-sans), Syne, system-ui, sans-serif !important;
+  animation: grade-pulse 2.6s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+.grade-tick {
+  transform-origin: center;
+}
+
+.grade-tick-on {
+  animation: grade-tick-pulse 2.6s ease-in-out infinite;
+}
+
+.grade-glow-ok {
+  text-shadow: 0 0 14px rgba(61, 255, 176, 0.5), 0 0 32px rgba(61, 255, 176, 0.22);
+}
+.grade-glow-mid {
+  text-shadow: 0 0 14px rgba(240, 212, 90, 0.45), 0 0 32px rgba(240, 212, 90, 0.2);
+}
+.grade-glow-bad {
+  text-shadow: 0 0 16px rgba(255, 107, 122, 0.6), 0 0 36px rgba(255, 107, 122, 0.28);
+}
+
+@keyframes grade-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(-1px) scale(1.04);
+    filter: brightness(1.18);
+  }
+}
+
+@keyframes grade-tick-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scaleY(1.35);
+  }
 }
 
 @keyframes sticker-bob {
@@ -94,7 +233,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .sticker-live, .live-dot, .forecast-marquee, .sticker-glint, .chart-draw, .chart-ping,
-  .odds-chip, .odds-chip__face { animation: none; }
+  .odds-chip, .odds-chip__face, .grade-mark, .grade-tick-on { animation: none; }
   .chart-draw { stroke-dashoffset: 0; }
   .sticker, .group:hover .sticker, .sticker:hover, .group:hover .sticker-live { transform: none; }
   .odds-chip { opacity: 0.35; }
@@ -107,7 +246,9 @@ body {
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
-  background: #07080a;
+  background:
+    radial-gradient(90% 60% at 80% 0%, rgba(94, 224, 255, 0.08), transparent 50%),
+    #0a0c10;
 }
 
 .odds-field {
@@ -121,7 +262,7 @@ body {
   inset: 0;
   z-index: 2;
   background:
-    radial-gradient(ellipse 65% 50% at 50% 35%, transparent 15%, rgba(7, 8, 10, 0.72) 65%, rgba(7, 8, 10, 0.92) 100%);
+    radial-gradient(ellipse 75% 60% at 50% 30%, transparent 35%, rgba(10, 12, 16, 0.35) 78%, rgba(10, 12, 16, 0.55) 100%);
 }
 
 .odds-chip {
@@ -129,7 +270,7 @@ body {
   z-index: 1;
   transform: translate(-50%, -50%) rotate(var(--chip-rot, 0deg));
   animation: odds-drift var(--chip-dur, 24s) ease-in-out var(--chip-delay, 0s) infinite;
-  opacity: 0.42;
+  opacity: 0.58;
 }
 
 .odds-chip__face {
@@ -149,20 +290,20 @@ body {
 }
 
 .odds-chip__label {
-  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-family: var(--font-sans), Syne, system-ui, sans-serif;
   font-weight: 700;
-  font-size: clamp(0.85rem, 2vw, 1.2rem);
-  letter-spacing: -0.03em;
-  color: rgba(244, 246, 248, 0.9);
+  font-size: clamp(0.85rem, 2vw, 1.15rem);
+  letter-spacing: -0.04em;
+  color: rgba(242, 244, 246, 0.92);
   line-height: 1;
 }
 
 .odds-chip__sub {
-  font-family: var(--font-outfit), system-ui, sans-serif;
-  font-size: clamp(0.48rem, 0.95vw, 0.6rem);
+  font-family: var(--font-sans), Syne, system-ui, sans-serif;
+  font-size: clamp(0.48rem, 0.95vw, 0.58rem);
   font-weight: 500;
-  letter-spacing: 0.02em;
-  color: rgba(139, 149, 161, 0.9);
+  letter-spacing: -0.01em;
+  color: rgba(154, 163, 173, 0.95);
   max-width: 85%;
   text-align: center;
   line-height: 1.15;

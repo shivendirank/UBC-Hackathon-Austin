@@ -34,10 +34,12 @@ export function HoverChart({
   series,
   format,
   aria,
+  height = 228,
 }: {
   series: Series[];
   format: "pct" | "usd";
   aria: string;
+  height?: number;
 }) {
   const clipId = useId().replace(/:/g, "");
   const targetRef = useRef<number | null>(null);
@@ -55,7 +57,7 @@ export function HoverChart({
   }
 
   const W = 720;
-  const H = 228;
+  const H = height;
   const L = 4;
   const R = 64;
   const T = 12;

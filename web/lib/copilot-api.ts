@@ -71,6 +71,7 @@ export const createCopilotSession = (body: { symbol?: string | null; path?: stri
     configured: boolean;
     reason?: string;
     agent_id?: string;
+    conversation_token?: string | null;
     signed_url?: string | null;
     error?: string;
     context?: Record<string, unknown>;

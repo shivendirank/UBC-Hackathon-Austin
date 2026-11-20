@@ -39,13 +39,16 @@ export function OddsChart({ points, stroke = "#28cc95" }: { points: HistoryPoint
 
 export function DualOddsChart({
   series,
+  height,
 }: {
   series: { points: HistoryPoint[]; stroke: string; label: string }[];
+  height?: number;
 }) {
   return (
     <HoverChart
       aria="YES odds of the contracts in this group"
       format="pct"
+      height={height}
       series={series.map((s) => ({
         label: s.label,
         color: s.stroke,

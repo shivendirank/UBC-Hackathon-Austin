@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useConversationControls, useConversationStatus } from "@elevenlabs/react";
+import { useConversationControls, useConversationStatus, type HookOptions } from "@elevenlabs/react";
 import Strands from "@/components/react-bits/Strands";
 import { WidgetHost } from "@/components/copilot/WidgetHost";
 import { useActiveMarket } from "@/lib/active-market";
@@ -13,6 +13,77 @@ import { useWidgets } from "@/lib/widgets";
 
 type Msg = { role: "user" | "agent" | "system"; text: string; eventId?: number };
 
+const WARM_MS = 8 * 60 * 1000;
+
+type WarmSession = {
+  configured: boolean;
+  conversation_token?: string | null;
+  signed_url?: string | null;
+  agent_id?: string;
+  error?: string;
+  reason?: string;
+  fetchedAt: number;
+};
+
+/**
+ * The ElevenLabs SDK asks for the mic with voiceIsolation, and that constraint
+ * can leave getUserMedia pending on Windows. Strip it and fail clearly instead
+ * of sitting on "Opening" until we invent a timeout.
+ */
+function prepareMicForAgent() {
+  const md = navigator.mediaDevices;
+  const tagged = md as MediaDevices & { __thinIceMic?: boolean };
+  if (!md || tagged.__thinIceMic) return;
+  const orig = md.getUserMedia.bind(md);
+  md.getUserMedia = (constraints) => {
+    let next = constraints;
+    if (next && typeof next.audio === "object" && next.audio) {
+      const audio = { ...next.audio };
+      delete (audio as { voiceIsolation?: boolean }).voiceIsolation;
+      next = { ...next, audio };
+    }
+    return Promise.race([
+      orig(next),
+      new Promise<MediaStream>((_, reject) => {
+        window.setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Microphone did not open. Allow the mic in the address bar, and close other Thin Ice tabs that are holding it.",
+              ),
+            ),
+          8000,
+        );
+      }),
+    ]);
+  };
+  tagged.__thinIceMic = true;
+}
+
+/** Short tone once the mic is live, so speech starts after the session is open. */
+function playReadyTone() {
+  const Ctx =
+    window.AudioContext ||
+    (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return;
+  const ctx = new Ctx();
+  void ctx.resume();
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(660, t);
+  osc.frequency.exponentialRampToValueAtTime(990, t + 0.08);
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.05, t + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.22);
+  osc.onended = () => void ctx.close();
+}
+
 /**
  * Jag's Strands orb + Thin Ice ElevenLabs session/tools/widgets.
  */
@@ -21,10 +92,12 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const { symbol, title, setActiveMarket } = useActiveMarket();
   const widgets = useWidgets();
   const { startSession, endSession, sendUserMessage } = useConversationControls();
-  const { status } = useConversationStatus();
+  const { status, message: statusMessage } = useConversationStatus();
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [gaveUp, setGaveUp] = useState(false);
   const [voiceConfigured, setVoiceConfigured] = useState(false);
   const [wakeArmed, setWakeArmed] = useState(false);
   const [needsWakeGesture, setNeedsWakeGesture] = useState(false);
@@ -36,11 +109,21 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: "agent",
-      text: "Say “Hey Gemini” to start voice (no click on the orb). I use Thin Ice tools for real grades — I don’t invent odds.",
+      text: "Say “Hey Gemini”. I’ll open, then a tone means you can start talking. I use Thin Ice tools for real grades — I don’t invent odds.",
     },
   ]);
   const sessionBusy = useRef(false);
+  const openingRef = useRef(false);
+  const chimeRef = useRef(false);
+  const sawConnecting = useRef(false);
+  const warmRef = useRef<WarmSession | null>(null);
+  const warmInflight = useRef<Promise<WarmSession> | null>(null);
+  const symbolRef = useRef(symbol);
+  const symbolsRef = useRef(symbols);
+  symbolRef.current = symbol;
+  symbolsRef.current = symbols;
   const activateRef = useRef<() => Promise<void>>(async () => {});
+  const stopWakeRef = useRef<(waitForRelease?: boolean) => Promise<void>>(async () => {});
   const transcriptRef = useRef<HTMLDivElement>(null);
   const inquiringRef = useRef(false);
   inquiringRef.current = inquiring;
@@ -84,20 +167,77 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       .catch(() => setVoiceConfigured(false));
   }, []);
 
+  const prefetchSession = useCallback(async (force = false): Promise<WarmSession> => {
+    const cached = warmRef.current;
+    if (!force && cached) {
+      const fresh = Boolean(cached.conversation_token || cached.signed_url);
+      const ttl = fresh ? WARM_MS : 15_000;
+      if (Date.now() - cached.fetchedAt < ttl) return cached;
+    }
+    if (!force && warmInflight.current) return warmInflight.current;
+    const run = createCopilotSession({
+      symbol: symbolRef.current ?? symbolsRef.current[0] ?? null,
+      path: typeof window !== "undefined" ? window.location.pathname : undefined,
+    })
+      .then((sess) => {
+        const warm: WarmSession = { ...sess, fetchedAt: Date.now() };
+        warmRef.current = warm;
+        if (sess.configured) setVoiceConfigured(true);
+        return warm;
+      })
+      .finally(() => {
+        if (warmInflight.current === run) warmInflight.current = null;
+      });
+    warmInflight.current = run;
+    return run;
+  }, []);
+
+  // Mint the WebRTC token while wake-word listening is idle, so "Hey Gemini" does not wait on the network.
   useEffect(() => {
+    prepareMicForAgent();
+    void prefetchSession().catch(() => {});
+    const timer = window.setInterval(() => {
+      void prefetchSession(true).catch(() => {});
+    }, 7 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [prefetchSession]);
+
+  const dockIfScrolled = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (window.scrollY >= 56) setOrbVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (status === "connecting") {
+      sawConnecting.current = true;
+      return;
+    }
     if (status === "connected") {
+      sawConnecting.current = false;
+      openingRef.current = false;
+      setOpening(false);
       setInquiring(true);
       setOrbVisible(true);
       setLevel(0.7);
-      setMessages((m) =>
-        m.some((x) => x.text.includes("Voice connected"))
-          ? m
-          : [...m, { role: "system", text: "Voice connected. Speak, or type below." }],
-      );
-    } else {
-      setLevel(undefined);
+      if (chimeRef.current) {
+        chimeRef.current = false;
+        playReadyTone();
+        appendTranscript("system", "You're on. Start talking.");
+      }
+      return;
     }
-  }, [status]);
+    setLevel(undefined);
+    const failedOpen =
+      chimeRef.current && (status === "error" || (status === "disconnected" && sawConnecting.current));
+    if (!failedOpen) return;
+    sawConnecting.current = false;
+    chimeRef.current = false;
+    openingRef.current = false;
+    setOpening(false);
+    setInquiring(false);
+    appendTranscript("agent", statusMessage || "Voice didn't open. Say “Hey Gemini” to try again.");
+    dockIfScrolled();
+  }, [status, statusMessage, appendTranscript, dockIfScrolled]);
 
   // Dock into the right edge once the user scrolls; stay out while inquiring.
   useEffect(() => {
@@ -114,78 +254,101 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     return () => window.removeEventListener("scroll", sync);
   }, []);
 
-  const dockIfScrolled = useCallback(() => {
-    if (typeof window === "undefined") return;
-    if (window.scrollY >= 56) setOrbVisible(false);
-  }, []);
-
   const connected = status === "connected";
-  const listening = connected || busy || wakeArmed;
+  const voiceLive = !gaveUp && (connected || opening || status === "connecting");
+  const listening = voiceLive || busy || wakeArmed;
 
-  const activate = useCallback(async () => {
-    if (sessionBusy.current) return;
-    sessionBusy.current = true;
-    setInquiring(true);
-    setOrbVisible(true);
-    setBusy(true);
-    setOpen(true);
-    setMessages((m) => [...m, { role: "system", text: "Starting ElevenLabs session…" }]);
-    try {
-      const sess = await createCopilotSession({
-        symbol: symbol ?? symbols[0] ?? null,
-        path: typeof window !== "undefined" ? window.location.pathname : undefined,
-      });
-      if (!sess.configured || (!sess.signed_url && !sess.agent_id)) {
+  const beginSession = useCallback(
+    (sess: WarmSession) => {
+      prepareMicForAgent();
+      const ready = Boolean(sess.conversation_token || sess.signed_url || sess.agent_id);
+      if (!sess.configured || !ready) {
+        openingRef.current = false;
+        chimeRef.current = false;
+        setOpening(false);
         setVoiceConfigured(false);
         setInquiring(false);
-        setMessages((m) => [
-          ...m,
-          {
-            role: "agent",
-            text:
-              sess.reason ||
-              sess.error ||
-              "ElevenLabs is not configured. Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in backend/.env.",
-          },
-        ]);
+        appendTranscript(
+          "agent",
+          sess.reason ||
+            sess.error ||
+            "ElevenLabs is not configured. Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in backend/.env.",
+        );
         dockIfScrolled();
+        sessionBusy.current = false;
         return;
       }
       setVoiceConfigured(true);
-      const opts: {
-        signedUrl?: string;
-        agentId?: string;
-        clientTools: typeof tools;
-        dynamicVariables?: Record<string, string>;
-      } = {
+      const opts: HookOptions = {
         clientTools: tools,
         dynamicVariables: {
           market_symbol: symbol ?? symbols[0] ?? "",
           market_title: title ?? "",
           app_path: typeof window !== "undefined" ? window.location.pathname : "",
         },
-      };
-      if (sess.signed_url) opts.signedUrl = sess.signed_url;
-      else if (sess.agent_id) opts.agentId = sess.agent_id;
-      await startSession({
-        ...(opts as Parameters<typeof startSession>[0]),
+        connectionDelay: { default: 0 },
         onMessage: ({ message, role, event_id }) => {
           appendTranscript(role === "user" ? "user" : "agent", message, event_id);
         },
         onModeChange: ({ mode }) => {
           setLevel(mode === "speaking" ? 1 : 0.65);
         },
-      });
-      appendTranscript("system", "Listening. Speak, or type below — both show in the transcript.");
-    } catch (e) {
-      setInquiring(false);
-      appendTranscript("agent", e instanceof Error ? e.message : "Could not start voice session");
-      dockIfScrolled();
-    } finally {
-      setBusy(false);
+      };
+      if (sess.signed_url) {
+        opts.signedUrl = sess.signed_url;
+        opts.connectionType = "websocket";
+      } else if (sess.conversation_token) {
+        opts.conversationToken = sess.conversation_token;
+        opts.connectionType = "webrtc";
+      } else if (sess.agent_id) {
+        opts.agentId = sess.agent_id;
+        opts.connectionType = "websocket";
+      }
+      // Must run in the click turn. Awaiting first suspends the mic and the session never connects.
+      startSession(opts);
       sessionBusy.current = false;
+    },
+    [symbol, symbols, title, tools, startSession, appendTranscript, dockIfScrolled],
+  );
+
+  const activate = useCallback(() => {
+    if (sessionBusy.current || openingRef.current || status === "connected" || status === "connecting") return;
+    sessionBusy.current = true;
+    openingRef.current = true;
+    chimeRef.current = true;
+    setGaveUp(false);
+    setOpening(true);
+    setInquiring(true);
+    setOrbVisible(true);
+    setOpen(true);
+    setBusy(true);
+    appendTranscript("system", "Opening the microphone…");
+    void stopWakeRef.current(false);
+    const cached = warmRef.current;
+    const cachedReady = Boolean(cached && (cached.signed_url || cached.conversation_token) && cached.configured);
+    if (cached && cachedReady) {
+      if (warmRef.current?.fetchedAt === cached.fetchedAt) warmRef.current = null;
+      void prefetchSession(true);
+      beginSession(cached);
+      setBusy(false);
+      return;
     }
-  }, [symbol, symbols, title, tools, startSession, appendTranscript, dockIfScrolled]);
+    void prefetchSession(true)
+      .then((sess) => {
+        if (warmRef.current?.fetchedAt === sess.fetchedAt) warmRef.current = null;
+        beginSession(sess);
+      })
+      .catch((e) => {
+        openingRef.current = false;
+        chimeRef.current = false;
+        setOpening(false);
+        setInquiring(false);
+        appendTranscript("agent", e instanceof Error ? e.message : "Could not start voice session");
+        dockIfScrolled();
+        sessionBusy.current = false;
+      })
+      .finally(() => setBusy(false));
+  }, [status, prefetchSession, beginSession, appendTranscript, dockIfScrolled]);
 
   activateRef.current = activate;
 
@@ -193,28 +356,25 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     supported: wakeSupported,
     listening: wakeListening,
     lastHeard,
+    stop: stopWake,
   } = useWakeWord({
     enabled: wakeArmed,
-    paused: connected || busy,
+    paused: voiceLive,
     onWake: () => {
       setInquiring(true);
       setOrbVisible(true);
-      if (!voiceConfigured) {
-        setOpen(true);
-        appendTranscript("system", "Wake heard, but ElevenLabs is not configured.");
-        return;
-      }
-      appendTranscript("system", "Wake word heard — starting ElevenLabs…");
       setOpen(true);
       void activateRef.current();
     },
   });
+  stopWakeRef.current = stopWake;
 
   const armWake = useCallback(async (opts?: { silent?: boolean }) => {
     if (!wakeWordSupported()) {
       setNeedsWakeGesture(false);
       return false;
     }
+    prepareMicForAgent();
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((t) => t.stop()); // free mic for SpeechRecognition / ElevenLabs
@@ -275,6 +435,9 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
 
   const endVoice = useCallback(async () => {
     sessionBusy.current = false;
+    openingRef.current = false;
+    chimeRef.current = false;
+    setOpening(false);
     try {
       await endSession();
     } catch {
@@ -348,19 +511,21 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       >
         {open && orbVisible && (
           <div className="pointer-events-auto w-[min(100vw-2rem,23rem)] overflow-hidden rounded-[22px] border border-white/20 bg-[rgba(12,16,22,0.55)] shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-inset ring-white/10 backdrop-blur-2xl">
-            <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-4 py-3">
+            <div className="flex items-center justify-between gap-3 border-b border-transparent bg-white/[0.04] px-4 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-semibold tracking-tight text-white">Thin Ice agent</p>
                 <p className="mt-0.5 text-[11px] text-[#9aa3ad]">
                   {connected
-                    ? "Voice live · transcript below"
-                    : wakeArmed && wakeListening
-                      ? "Listening for “Hey Gemini”"
-                      : wakeArmed
-                        ? "Wake armed · say “Hey Gemini”"
-                        : voiceConfigured
-                          ? "Voice ready"
-                          : "Voice not configured"}
+                    ? "You're on · start talking"
+                    : voiceLive
+                      ? "Opening — talk after the tone"
+                      : wakeArmed && wakeListening
+                        ? "Listening for “Hey Gemini”"
+                        : wakeArmed
+                          ? "Wake armed · say “Hey Gemini”"
+                          : voiceConfigured
+                            ? "Voice ready"
+                            : "Voice not configured"}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -424,7 +589,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
                 <button
                   type="button"
                   onClick={() => void activate()}
-                  disabled={busy}
+                  disabled={busy || voiceLive}
                   className="rounded-full bg-[#9aebff] px-3.5 py-1.5 text-xs font-semibold text-[#0b1016] transition hover:bg-[#b5f1ff] disabled:opacity-50"
                 >
                   Activate voice
@@ -492,9 +657,13 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           </div>
         )}
 
-        {orbVisible && wakeArmed && !connected && (
+        {orbVisible && (wakeArmed || voiceLive) && !connected && (
           <p className="pointer-events-none max-w-[11rem] text-right text-[10px] leading-snug text-[#9aa3ad]">
-            {wakeListening ? "Listening — say “Hey Gemini”" : "Starting wake listener…"}
+            {voiceLive
+              ? "Opening — start talking after the tone"
+              : wakeListening
+                ? "Listening — say “Hey Gemini”"
+                : "Starting wake listener…"}
             {lastHeard ? <span className="mt-0.5 block truncate text-[#6f7882]">Heard: {lastHeard}</span> : null}
           </p>
         )}
@@ -508,7 +677,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           aria-label="Open Thin Ice agent transcript"
           tabIndex={orbVisible ? 0 : -1}
           className={`pointer-events-auto h-[53px] w-[53px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[63px] sm:w-[63px] ${
-            wakeListening && !connected
+            (wakeListening || voiceLive) && !connected
               ? "border-[#9aebff]/50 ring-[#9aebff]/20"
               : "border-white/25 ring-white/15 hover:border-white/40"
           } ${orbVisible ? "" : "pointer-events-none"}`}

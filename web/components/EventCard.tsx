@@ -27,7 +27,7 @@ export function EventCard({
   const lead = board.markets[0];
   const boardBroken = shown.some((m) => inconsistent.has(m.symbol));
   return (
-    <article className="group flex h-full flex-col rounded-[20px] border border-white/10 bg-[#12141a] p-5 transition-colors duration-300 hover:border-white/25">
+    <article className="group flex h-full flex-col rounded-[20px] surface-card p-5 transition-colors duration-300 hover:brightness-110">
       <div className="flex flex-1 flex-col">
       <div className="flex items-start gap-3">
         <Sticker category={board.category} title={board.title} ticker={lead.event_ticker} className="h-10 w-10 shrink-0" />

@@ -125,7 +125,7 @@ export function WidgetHost() {
             key={p.id}
             className="pointer-events-auto w-full overflow-hidden rounded-[22px] border border-white/20 bg-[rgba(12,16,22,0.55)] shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-inset ring-white/10 backdrop-blur-2xl"
           >
-            <header className="flex items-center gap-2 border-b border-white/10 bg-white/[0.04] px-3.5 py-2.5">
+            <header className="flex items-center gap-2 border-b border-transparent bg-white/[0.04] px-3.5 py-2.5">
               <h3 className="min-w-0 flex-1 truncate text-[13px] font-semibold tracking-tight text-white">
                 {p.title}
               </h3>

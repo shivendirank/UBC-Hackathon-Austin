@@ -50,7 +50,7 @@ export default function WatchPage() {
         <p className="mt-2 text-sm text-[#8b95a1]">
           Sign in to save markets and keep an eye on their grades and odds.
         </p>
-        <div className="mt-8 rounded-[20px] border border-white/10 bg-[#12141a] p-6">
+        <div className="mt-8 rounded-[20px] surface-card p-6">
           <p className="text-sm text-[#c5ced6]">
             Your watchlist is private to your account. Star any market from the Markets page or a market detail
             page after you log in.

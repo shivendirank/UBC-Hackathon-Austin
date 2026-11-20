@@ -49,7 +49,7 @@ export function RelationGraph({
               aria-pressed={node.symbol === current.symbol}
               onClick={() => setSelected(node.symbol)}
               className={`w-52 shrink-0 rounded-2xl border px-4 py-3 text-left transition-colors ${
-                node.symbol === current.symbol ? "border-white bg-[#1c2128]" : "border-white/10 bg-[#12141a] hover:border-white/25"
+                node.symbol === current.symbol ? "border-white bg-[#1c2128]" : "border-white/10 surface-card hover:brightness-110"
               }`}
             >
               <span className="flex items-start justify-between gap-2">
@@ -72,7 +72,7 @@ export function RelationGraph({
         {verified ? "Verified relationship" : "Possible relationship"} · {edge}
         {violated ? " · confirmed disagreement" : ""}
       </p>
-      <div className="mt-4 rounded-2xl border border-white/10 bg-[#1a1d24] p-4">
+      <div className="mt-4 rounded-2xl surface-inset p-4">
         <p className="text-sm text-[#9aa3ad]">{current.event}</p>
         <div className="mt-1 flex items-center gap-2">
           <p className="text-lg font-semibold text-white">{current.label}</p>

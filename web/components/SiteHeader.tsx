@@ -28,11 +28,11 @@ export function SiteHeader() {
 
   if (path === "/login") {
     return (
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#07080a]/95 backdrop-blur">
+      <header className="glass-header sticky top-0 z-30">
         <div className="mx-auto flex h-16 w-full max-w-[1680px] items-center px-6 lg:px-8">
           <Link href="/" className="group flex items-center gap-2.5">
             <Sticker category={null} className="h-6 w-6" />
-            <span className="text-[13px] font-semibold uppercase tracking-[0.22em] text-white">Thin Ice</span>
+            <span className="text-[15px] font-semibold tracking-[-0.04em] text-white">Thin Ice</span>
           </Link>
         </div>
       </header>
@@ -40,11 +40,11 @@ export function SiteHeader() {
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#07080a]/95 backdrop-blur">
+    <header className="glass-header sticky top-0 z-30">
       <div className="mx-auto flex h-16 w-full max-w-[1680px] items-center gap-6 px-6 lg:px-8">
         <Link href="/" className="group flex shrink-0 items-center gap-2.5">
           <Sticker category={null} className="h-6 w-6" />
-          <span className="text-[13px] font-semibold uppercase tracking-[0.22em] text-white">Thin Ice</span>
+          <span className="text-[15px] font-semibold tracking-[-0.04em] text-white">Thin Ice</span>
         </Link>
         <nav className="flex min-w-0 items-center gap-5 overflow-x-auto" aria-label="Primary">
           {LINKS.map((link) => {
@@ -53,7 +53,7 @@ export function SiteHeader() {
               <Link
                 key={link.href}
                 href={link.href}
-                className={`shrink-0 text-[12px] font-medium uppercase tracking-[0.16em] ${on ? "text-white" : "text-[#8b95a1] hover:text-white"}`}
+                className={`shrink-0 text-[13px] font-medium tracking-[-0.01em] ${on ? "text-white" : "text-[#8b95a1] hover:text-white"}`}
                 aria-current={on ? "page" : undefined}
               >
                 {link.label}
@@ -66,7 +66,7 @@ export function SiteHeader() {
             name="q"
             placeholder="Search predictions"
             aria-label="Search predictions"
-            className="h-9 w-full rounded-full border border-white/10 bg-[#12141a] px-4 text-sm text-white outline-none placeholder:text-[#6f7882]"
+            className="h-9 w-full rounded-full surface-card px-4 text-sm text-white outline-none placeholder:text-[#6f7882]"
           />
         </form>
         {user ? (

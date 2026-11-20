@@ -1,28 +1,84 @@
-import type { Grade } from "@/lib/api";
+"use client";
 
-const STYLE: Record<Grade, string> = {
-  A: "bg-[#12382c] text-[#8ee0b0] ring-[#28cc95]/35",
-  B: "bg-[#12382c] text-[#8ee0b0] ring-[#28cc95]/25",
-  C: "bg-[#2a3118] text-[#d4e07a] ring-[#a8b84a]/30",
-  D: "bg-[#3a2c12] text-[#ffc46b] ring-[#ffc46b]/30",
-  F: "bg-[#3a1c24] text-[#ff8b98] ring-[#ff8b98]/30",
+import type { Grade } from "@/lib/api";
+import { GRADE_ORDER } from "@/lib/grade-scenarios";
+
+const INK: Record<Grade, string> = {
+  A: "#3DFFB0",
+  B: "#5AE8B8",
+  C: "#F0D45A",
+  D: "#FFB84A",
+  F: "#FF6B7A",
 };
 
-/** A–F depth grade from cost-to-move-10¢ (scoring.py). */
+const GLOW: Record<Grade, string> = {
+  A: "grade-glow-ok",
+  B: "grade-glow-ok",
+  C: "grade-glow-mid",
+  D: "grade-glow-mid",
+  F: "grade-glow-bad",
+};
+
+/** Depth grade A–F with ladder meter (cost-to-move-10¢). */
 export function GradePill({
   grade,
   size = "sm",
+  showLadder = true,
+  onSelect,
 }: {
   grade: Grade;
   size?: "sm" | "lg";
+  showLadder?: boolean;
+  /** When set, ladder ticks become a grade browser (what-if). */
+  onSelect?: (grade: Grade) => void;
 }) {
-  const box = size === "lg" ? "h-12 w-12 text-2xl" : "h-7 w-7 text-sm";
+  const color = INK[grade];
+  const letter = size === "lg" ? "text-5xl" : "text-2xl";
+  const interactive = Boolean(onSelect);
+
   return (
     <span
-      title={`Liquidity grade ${grade}: based on order-book depth to move the odds 10¢`}
-      className={`inline-flex ${box} shrink-0 items-center justify-center rounded-lg font-semibold tabular-nums ring-1 ${STYLE[grade]}`}
+      title={
+        interactive
+          ? `Browse depth grades — currently showing ${grade}`
+          : `Liquidity grade ${grade}: based on order-book depth to move the odds 10¢`
+      }
+      aria-label={`Liquidity grade ${grade}${interactive ? ", click ticks to preview other grades" : ""}`}
+      className="grade-stack inline-flex flex-col items-start gap-1"
     >
-      {grade}
+      <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#6f7882]">Depth</span>
+      <span className={`grade-mark font-bold tabular-nums leading-none tracking-[-0.08em] ${letter} ${GLOW[grade]}`} style={{ color }}>
+        {grade}
+      </span>
+      {showLadder && (
+        <span className="grade-ladder flex items-center gap-0.5" aria-hidden={!interactive} role={interactive ? "group" : undefined}>
+          {GRADE_ORDER.map((g) => {
+            const on = g === grade;
+            if (!onSelect) {
+              return (
+                <span
+                  key={g}
+                  className={`grade-tick inline-block h-1 rounded-full transition-all ${on ? "grade-tick-on w-3" : "w-1.5 opacity-35"}`}
+                  style={{ background: on ? color : "#3a404a" }}
+                />
+              );
+            }
+            return (
+              <button
+                key={g}
+                type="button"
+                aria-label={`Preview grade ${g}`}
+                aria-pressed={on}
+                onClick={() => onSelect(g)}
+                className={`grade-tick h-2 rounded-full transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
+                  on ? "grade-tick-on w-3.5" : "w-2 opacity-40 hover:opacity-80"
+                }`}
+                style={{ background: on ? color : "#3a404a" }}
+              />
+            );
+          })}
+        </span>
+      )}
     </span>
   );
 }

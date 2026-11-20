@@ -86,6 +86,7 @@ export function LiveDualOddsChart({ series }: { series: SeriesIn[] }) {
 
   return (
     <DualOddsChart
+      height={200}
       series={series.map((s, i) => ({
         points: histories[i] ?? seedHistory(s.points, s.market),
         stroke: s.stroke,
