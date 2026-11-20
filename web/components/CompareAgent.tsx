@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useConversationControls, useConversationStatus, type HookOptions } from "@elevenlabs/react";
 import Strands from "@/components/react-bits/Strands";
+import { Draggable, DragHandle } from "@/components/Draggable";
 import { WidgetHost } from "@/components/copilot/WidgetHost";
 import { useActiveMarket } from "@/lib/active-market";
 import { createCopilotSession, fetchCopilotStatus } from "@/lib/copilot-api";
@@ -134,6 +135,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     el.scrollTop = el.scrollHeight;
   }, [messages, open]);
 
+  /** Append to transcript without forcing the chat panel open (orb can speak minimized). */
   const appendTranscript = useCallback((role: Msg["role"], text: string, eventId?: number) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -143,7 +145,29 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       if (last && last.role === role && last.text === trimmed) return m;
       return [...m, { role, text: trimmed, eventId }];
     });
-    setOpen(true);
+  }, []);
+
+  /** Stream agent speech into one bubble (ElevenLabs chat response parts). */
+  const upsertAgentStream = useCallback((eventId: number, text: string, mode: "start" | "delta" | "stop") => {
+    setMessages((m) => {
+      const idx = m.findIndex((x) => x.role === "agent" && x.eventId === eventId);
+      if (mode === "start") {
+        if (idx >= 0) return m;
+        return [...m, { role: "agent", text: text.trim(), eventId }];
+      }
+      if (idx < 0) {
+        const t = text.trim();
+        return t ? [...m, { role: "agent", text: t, eventId }] : m;
+      }
+      const next = [...m];
+      const cur = next[idx]!;
+      if (mode === "delta") {
+        next[idx] = { ...cur, text: `${cur.text}${text}` };
+      } else if (mode === "stop" && text.trim()) {
+        next[idx] = { ...cur, text: text.trim() };
+      }
+      return next;
+    });
   }, []);
 
   const tools = useMemo(
@@ -287,8 +311,17 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           app_path: typeof window !== "undefined" ? window.location.pathname : "",
         },
         connectionDelay: { default: 0 },
-        onMessage: ({ message, role, event_id }) => {
-          appendTranscript(role === "user" ? "user" : "agent", message, event_id);
+        onMessage: ({ message, role, event_id, source }) => {
+          const who = role === "user" || source === "user" ? "user" : "agent";
+          appendTranscript(who, message, event_id);
+        },
+        onAgentChatResponsePart: ({ text, type, event_id }) => {
+          if (type === "start") upsertAgentStream(event_id, text ?? "", "start");
+          else if (type === "delta") upsertAgentStream(event_id, text ?? "", "delta");
+          else if (type === "stop") upsertAgentStream(event_id, text ?? "", "stop");
+        },
+        onAgentResponseCorrection: ({ corrected_agent_response, event_id }) => {
+          if (corrected_agent_response) appendTranscript("agent", corrected_agent_response, event_id);
         },
         onModeChange: ({ mode }) => {
           setLevel(mode === "speaking" ? 1 : 0.65);
@@ -308,7 +341,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       startSession(opts);
       sessionBusy.current = false;
     },
-    [symbol, symbols, title, tools, startSession, appendTranscript, dockIfScrolled],
+    [symbol, symbols, title, tools, startSession, appendTranscript, upsertAgentStream, dockIfScrolled],
   );
 
   const activate = useCallback(() => {
@@ -320,7 +353,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     setOpening(true);
     setInquiring(true);
     setOrbVisible(true);
-    setOpen(true);
+    // Stay minimized — voice runs on the orb; open transcript only when the user taps it.
     setBusy(true);
     appendTranscript("system", "Opening the microphone…");
     void stopWakeRef.current(false);
@@ -363,7 +396,6 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     onWake: () => {
       setInquiring(true);
       setOrbVisible(true);
-      setOpen(true);
       void activateRef.current();
     },
   });
@@ -500,20 +532,32 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const chip =
     "rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs text-[#e8eef4] backdrop-blur-md transition hover:border-white/30 hover:bg-white/[0.1]";
 
+  const orbHome =
+    typeof window !== "undefined"
+      ? { x: Math.max(16, window.innerWidth - 92), y: Math.round(window.innerHeight * 0.115) }
+      : { x: 800, y: 100 };
+
   return (
     <>
       <WidgetHost />
-      <div
-        className={`pointer-events-none fixed top-[11.5vh] right-4 z-40 flex flex-col items-end gap-3 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:right-6 ${
-          orbVisible ? "translate-x-0" : "translate-x-[calc(100%+1.5rem)]"
+      <Draggable
+        storageKey="thin-ice-orb"
+        initial={orbHome}
+        className={`z-40 flex flex-col items-end gap-3 transition-opacity duration-300 ${
+          orbVisible ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
-        aria-hidden={!orbVisible}
+        style={{ visibility: orbVisible ? "visible" : "hidden" }}
       >
         {open && orbVisible && (
           <div className="pointer-events-auto w-[min(100vw-2rem,23rem)] overflow-hidden rounded-[22px] border border-white/20 bg-[rgba(12,16,22,0.55)] shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-inset ring-white/10 backdrop-blur-2xl">
             <div className="flex items-center justify-between gap-3 border-b border-transparent bg-white/[0.04] px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold tracking-tight text-white">Thin Ice agent</p>
+              <DragHandle className="min-w-0 flex-1">
+                <p className="flex items-center gap-2 text-sm font-semibold tracking-tight text-white">
+                  <span className="text-[10px] text-[#5c6570]" aria-hidden>
+                    ⋮⋮
+                  </span>
+                  Thin Ice agent
+                </p>
                 <p className="mt-0.5 text-[11px] text-[#9aa3ad]">
                   {connected
                     ? "You're on · start talking"
@@ -527,7 +571,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
                             ? "Voice ready"
                             : "Voice not configured"}
                 </p>
-              </div>
+              </DragHandle>
               <div className="flex items-center gap-2">
                 <span
                   className={`h-2 w-2 rounded-full ${
@@ -550,7 +594,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
                   }}
                   className="rounded-full px-2 py-1 text-xs text-[#9aa3ad] transition hover:bg-white/10 hover:text-white"
                 >
-                  Close
+                  Minimize
                 </button>
               </div>
             </div>
@@ -657,6 +701,12 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           </div>
         )}
 
+        {orbVisible && !open && connected && (
+          <p className="pointer-events-none max-w-[11rem] text-right text-[10px] leading-snug text-[#9aa3ad]">
+            {level != null && level >= 0.9 ? "Speaking…" : "Listening · tap orb for transcript"}
+          </p>
+        )}
+
         {orbVisible && (wakeArmed || voiceLive) && !connected && (
           <p className="pointer-events-none max-w-[11rem] text-right text-[10px] leading-snug text-[#9aa3ad]">
             {voiceLive
@@ -668,35 +718,37 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={() => {
-            setOrbVisible(true);
-            setOpen((v) => !v);
-          }}
-          aria-label="Open Thin Ice agent transcript"
-          tabIndex={orbVisible ? 0 : -1}
-          className={`pointer-events-auto h-[53px] w-[53px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[63px] sm:w-[63px] ${
-            (wakeListening || voiceLive) && !connected
-              ? "border-[#9aebff]/50 ring-[#9aebff]/20"
-              : "border-white/25 ring-white/15 hover:border-white/40"
-          } ${orbVisible ? "" : "pointer-events-none"}`}
-        >
-          <div className="relative h-full w-full">
-            <Strands
-              listening={listening}
-              level={level}
-              energy={listening ? 0.9 : 0.55}
-              glass
-              glassSize={1.05}
-              interactive
-              clickPulse
-              intensity={1.05}
-              className="h-full w-full"
-            />
-          </div>
-        </button>
-      </div>
+        <DragHandle className="pointer-events-auto rounded-full" title="Drag orb · tap to open transcript">
+          <button
+            type="button"
+            onClick={() => {
+              setOrbVisible(true);
+              setOpen((v) => !v);
+            }}
+            aria-label={open ? "Minimize Thin Ice agent transcript" : "Open Thin Ice agent transcript"}
+            tabIndex={orbVisible ? 0 : -1}
+            className={`h-[53px] w-[53px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[63px] sm:w-[63px] ${
+              (wakeListening || voiceLive) && !connected
+                ? "border-[#9aebff]/50 ring-[#9aebff]/20"
+                : "border-white/25 ring-white/15 hover:border-white/40"
+            } ${orbVisible ? "" : "pointer-events-none"}`}
+          >
+            <div className="relative h-full w-full">
+              <Strands
+                listening={listening}
+                level={level}
+                energy={listening ? 0.9 : 0.55}
+                glass
+                glassSize={1.05}
+                interactive
+                clickPulse
+                intensity={1.05}
+                className="h-full w-full"
+              />
+            </div>
+          </button>
+        </DragHandle>
+      </Draggable>
     </>
   );
 }

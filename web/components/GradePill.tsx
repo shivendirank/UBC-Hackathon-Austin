@@ -1,7 +1,8 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import type { Grade } from "@/lib/api";
-import { GRADE_ORDER } from "@/lib/grade-scenarios";
+import { GRADE_ORDER, nextGrade, prevGrade } from "@/lib/grade-scenarios";
 
 const INK: Record<Grade, string> = {
   A: "#3DFFB0",
@@ -19,42 +20,68 @@ const GLOW: Record<Grade, string> = {
   F: "grade-glow-bad",
 };
 
-/** Depth grade A–F with ladder meter (cost-to-move-10¢). */
+/** Depth grade A–F. Tap ticks or swipe to preview other letters (what-if). */
 export function GradePill({
   grade,
   size = "sm",
   showLadder = true,
+  browse = false,
   onSelect,
 }: {
   grade: Grade;
   size?: "sm" | "lg";
   showLadder?: boolean;
-  /** When set, ladder ticks become a grade browser (what-if). */
+  /** Swipe / tick browsing. Default on everywhere. */
+  browse?: boolean;
+  /** Controlled preview (parent owns state). */
   onSelect?: (grade: Grade) => void;
 }) {
-  const color = INK[grade];
+  const [local, setLocal] = useState<Grade>(grade);
+  const touchX = useRef<number | null>(null);
+  const controlled = Boolean(onSelect);
+  const shown = controlled ? grade : local;
+
+  useEffect(() => {
+    if (!controlled) setLocal(grade);
+  }, [grade, controlled]);
+
+  const setShown = (g: Grade) => {
+    if (onSelect) onSelect(g);
+    else setLocal(g);
+  };
+
+  const interactive = browse || controlled;
+  const color = INK[shown];
   const letter = size === "lg" ? "text-5xl" : "text-2xl";
-  const interactive = Boolean(onSelect);
 
   return (
     <span
-      title={
-        interactive
-          ? `Browse depth grades — currently showing ${grade}`
-          : `Liquidity grade ${grade}: based on order-book depth to move the odds 10¢`
-      }
-      aria-label={`Liquidity grade ${grade}${interactive ? ", click ticks to preview other grades" : ""}`}
-      className="grade-stack inline-flex flex-col items-start gap-1"
+      title={interactive ? `Browse depth grades — showing ${shown}` : `Liquidity grade ${shown}`}
+      aria-label={`Liquidity grade ${shown}${interactive ? ", swipe or tap ticks to preview" : ""}`}
+      className="grade-stack inline-flex touch-pan-y flex-col items-start gap-1 select-none"
+      onTouchStart={(e) => {
+        if (!interactive) return;
+        touchX.current = e.changedTouches[0]?.clientX ?? null;
+      }}
+      onTouchEnd={(e) => {
+        if (!interactive) return;
+        const start = touchX.current;
+        touchX.current = null;
+        if (start == null) return;
+        const dx = (e.changedTouches[0]?.clientX ?? start) - start;
+        if (Math.abs(dx) < 36) return;
+        setShown(dx < 0 ? nextGrade(shown) : prevGrade(shown));
+      }}
     >
       <span className="text-[9px] font-semibold uppercase tracking-[0.18em] text-[#6f7882]">Depth</span>
-      <span className={`grade-mark font-bold tabular-nums leading-none tracking-[-0.08em] ${letter} ${GLOW[grade]}`} style={{ color }}>
-        {grade}
+      <span className={`grade-mark font-bold tabular-nums leading-none tracking-[-0.08em] ${letter} ${GLOW[shown]}`} style={{ color }}>
+        {shown}
       </span>
       {showLadder && (
-        <span className="grade-ladder flex items-center gap-0.5" aria-hidden={!interactive} role={interactive ? "group" : undefined}>
+        <span className="grade-ladder flex items-center gap-0.5" role={interactive ? "group" : undefined}>
           {GRADE_ORDER.map((g) => {
-            const on = g === grade;
-            if (!onSelect) {
+            const on = g === shown;
+            if (!interactive) {
               return (
                 <span
                   key={g}
@@ -69,7 +96,11 @@ export function GradePill({
                 type="button"
                 aria-label={`Preview grade ${g}`}
                 aria-pressed={on}
-                onClick={() => onSelect(g)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShown(g);
+                }}
                 className={`grade-tick h-2 rounded-full transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 ${
                   on ? "grade-tick-on w-3.5" : "w-2 opacity-40 hover:opacity-80"
                 }`}

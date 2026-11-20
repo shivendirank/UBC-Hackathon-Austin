@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { GradePill } from "@/components/GradePill";
+import { MarketGradePanel } from "@/components/MarketGradePanel";
 import { MoveCostChart, OddsChart } from "@/components/MoveCostChart";
 import { Sticker } from "@/components/Stickers";
 import { WatchButton } from "@/components/WatchButton";
@@ -51,25 +52,15 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
               </p>
             )}
             <div className="mt-5">
-              <div className="flex items-baseline justify-between gap-3">
-                <div>
-                  <span className="block text-sm font-medium text-[#d7dde4]">{m.label}</span>
-                  <span className="mt-1 block text-xs text-[#8b95a1]">YES</span>
-                  <span className="mt-1 block text-4xl font-bold tabular-nums tracking-tight text-white">{m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"}</span>
-                </div>
-                <div className="text-right">
-                  <GradePill grade={m.grade} size="lg" />
-                  <span className="mt-1 block text-xs text-[#8b95a1]">Depth grade</span>
-                </div>
+              <div>
+                <span className="block text-sm font-medium text-[#d7dde4]">{m.label}</span>
+                <span className="mt-1 block text-xs text-[#8b95a1]">YES</span>
+                <span className="mt-1 block text-4xl font-bold tabular-nums tracking-tight text-white">{m.odds_pct != null ? `${m.odds_pct.toFixed(0)}%` : "—"}</span>
               </div>
-              <span className="mt-2 block text-sm text-[#9aa3ad]">
-                {verdict.title}
-                {verdict.freshness !== "live" && verdict.kind !== "insufficient" ? ` · ${verdict.ageLabel}` : ""}
-                {" · "}
-                {usd(m.move_cost_usd)} to move 10¢
-              </span>
+              <div className="mt-4">
+                <MarketGradePanel market={m} verdict={verdict} />
+              </div>
             </div>
-            <p className="mt-3 text-sm text-[#c5ced6]">{verdict.reason}</p>
             {focusRelation?.latest_check && (
               <p className={`mt-2 text-sm ${verifiedBreak ? "text-[#ff8b98]" : "text-[#9aa3ad]"}`}>
                 Compared with related markets: {focusRelation.latest_check.summary}

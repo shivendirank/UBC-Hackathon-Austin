@@ -149,7 +149,7 @@ function OutcomeButton({ market, color, inconsistent }: { market: Market; color:
         <span className="text-[1.75rem] font-bold tabular-nums tracking-tight text-white">
           {market.odds_pct != null ? `${market.odds_pct.toFixed(0)}%` : "—"}
         </span>
-        <GradePill grade={market.grade} size="sm" showLadder={false} />
+        <GradePill grade={market.grade} size="sm" />
       </p>
       <p className="mt-1 text-xs text-[#7a8490]">
         {inconsistent ? (

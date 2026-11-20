@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { GradePill } from "@/components/GradePill";
+import { MarketGradePanel } from "@/components/MarketGradePanel";
 import { LiveDualOddsChart } from "@/components/LiveDualOddsChart";
 import { StatusPill } from "@/components/StatusPill";
 import {
@@ -186,8 +187,8 @@ async function SideBySide({
       </p>
 
       <div className="mt-8 grid gap-4 lg:grid-cols-2">
-        <MarketPanel market={left} verdictTitle={leftVerdict.title} verdictReason={leftVerdict.reason} accent="#28cc95" />
-        <MarketPanel market={right} verdictTitle={rightVerdict.title} verdictReason={rightVerdict.reason} accent="#4c8dff" />
+        <MarketPanel market={left} verdict={leftVerdict} accent="#28cc95" />
+        <MarketPanel market={right} verdict={rightVerdict} accent="#4c8dff" />
       </div>
 
       <section className="mt-5 rounded-[24px] surface-card p-5 lg:p-6">
@@ -269,32 +270,26 @@ async function SideBySide({
 
 function MarketPanel({
   market,
-  verdictTitle,
-  verdictReason,
+  verdict,
   accent,
 }: {
   market: Market | MarketDetail;
-  verdictTitle: string;
-  verdictReason: string;
+  verdict: ReturnType<typeof assess>;
   accent: string;
 }) {
   return (
     <article className="rounded-[24px] surface-card p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-xs text-[#8b95a1]">{market.category ?? "Market"}</p>
-          <h2 className="mt-1 text-lg font-semibold leading-snug text-white">{market.event_title}</h2>
-          <p className="mt-1 text-sm text-[#c5ced6]">{market.label}</p>
-        </div>
-        <GradePill grade={market.grade} size="lg" />
+      <div className="min-w-0">
+        <p className="text-xs text-[#8b95a1]">{market.category ?? "Market"}</p>
+        <h2 className="mt-1 text-lg font-semibold leading-snug text-white">{market.event_title}</h2>
+        <p className="mt-1 text-sm text-[#c5ced6]">{market.label}</p>
       </div>
       <p className="mt-5 text-4xl font-semibold tabular-nums text-white" style={{ textShadow: `0 0 40px ${accent}33` }}>
         {market.odds_pct != null ? `${market.odds_pct.toFixed(0)}%` : "—"}
       </p>
-      <p className="mt-1 text-sm text-[#9aa3ad]">
-        {verdictTitle} · {usd(market.move_cost_usd)} to move 10¢
-      </p>
-      <p className="mt-3 text-sm leading-snug text-[#c5ced6]">{verdictReason}</p>
+      <div className="mt-4">
+        <MarketGradePanel market={market} verdict={verdict} />
+      </div>
       <Link
         href={`/market/${encodeURIComponent(market.symbol)}`}
         className="mt-4 inline-block text-sm font-medium text-white underline decoration-white/30 underline-offset-4"

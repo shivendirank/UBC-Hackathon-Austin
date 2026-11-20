@@ -61,7 +61,6 @@ export default function WatchPage() {
           >
             Log in to view watchlist
           </Link>
-          <p className="mt-3 text-xs text-[#6f7882]">Demo: demo@thinice.local / demo1234</p>
         </div>
       </main>
     );

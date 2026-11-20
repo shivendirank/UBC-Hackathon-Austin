@@ -70,19 +70,16 @@ export function SiteHeader() {
           />
         </form>
         {user ? (
-          <div className="flex shrink-0 items-center gap-3">
-            <span className="hidden text-xs text-[#9aa3ad] sm:inline">{user.name || user.email}</span>
-            <button
-              type="button"
-              onClick={() => {
-                clearSession();
-                setUser(null);
-              }}
-              className="text-[12px] font-medium uppercase tracking-[0.16em] text-[#8b95a1] hover:text-white"
-            >
-              Log out
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => {
+              clearSession();
+              setUser(null);
+            }}
+            className="shrink-0 text-[12px] font-medium uppercase tracking-[0.16em] text-[#8b95a1] hover:text-white"
+          >
+            Log out
+          </button>
         ) : (
           <Link
             href="/login"
