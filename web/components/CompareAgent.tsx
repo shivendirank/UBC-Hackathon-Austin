@@ -123,7 +123,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const symbolsRef = useRef(symbols);
   symbolRef.current = symbol;
   symbolsRef.current = symbols;
-  const activateRef = useRef<() => Promise<void>>(async () => {});
+  const activateRef = useRef<() => void>(() => {});
   const stopWakeRef = useRef<(waitForRelease?: boolean) => Promise<void>>(async () => {});
   const transcriptRef = useRef<HTMLDivElement>(null);
   const inquiringRef = useRef(false);

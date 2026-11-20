@@ -139,11 +139,13 @@ export function useWakeWord(opts: {
 
   useEffect(() => {
     if (!enabled || paused || !supported) {
-      stop();
+      void stop();
       return;
     }
     start();
-    return () => stop();
+    return () => {
+      void stop();
+    };
   }, [enabled, paused, supported, start, stop]);
 
   return { supported, listening, lastHeard, stop };
