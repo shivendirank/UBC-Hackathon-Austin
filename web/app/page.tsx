@@ -6,7 +6,7 @@ import { ForecastBar } from "@/components/ForecastBar";
 import { findMarket, getMarket, getMarkets, getRelations, type HistoryPoint, type Market } from "@/lib/api";
 import { groupEvents, mixBoards } from "@/lib/events";
 import { bookStatus } from "@/lib/status";
-import { inconsistentSymbols } from "@/lib/verdict";
+import { bookIsFresh, inconsistentSymbols } from "@/lib/verdict";
 
 export default async function Home(props: PageProps<"/">) {
   const sp = await props.searchParams;
@@ -18,12 +18,16 @@ export default async function Home(props: PageProps<"/">) {
   const categories = [...new Set(all.map((m) => m.category).filter((c): c is string => Boolean(c)))].sort();
 
   const isDemo = (m: Market) => Boolean(m.synthetic || m.event_title?.includes("Synthetic replay"));
-  let markets = all.filter((m) => bookStatus(m) !== "Empty" && !isDemo(m));
+  // Drop empty / demo / stale books — stale grades read as "Insufficient data" on every tile.
+  let markets = all.filter(
+    (m) => bookStatus(m) !== "Empty" && !isDemo(m) && bookIsFresh(m.updated_at),
+  );
   if (category) markets = markets.filter((m) => m.category === category);
   if (q) {
     const needle = q.toLowerCase();
     markets = all.filter((m) =>
       !isDemo(m) &&
+      bookIsFresh(m.updated_at) &&
       [m.event_title, m.label, m.symbol, m.category].some((v) => v?.toLowerCase().includes(needle)),
     );
   }
@@ -37,7 +41,9 @@ export default async function Home(props: PageProps<"/">) {
   const relationsData = await getRelations();
   const relations = relationsData?.relations ?? [];
   const inconsistent = inconsistentSymbols(relations);
-  const quoted = all.filter((m) => bookStatus(m) !== "Empty" && m.odds_pct != null && !isDemo(m));
+  const quoted = all.filter(
+    (m) => bookStatus(m) !== "Empty" && m.odds_pct != null && !isDemo(m) && bookIsFresh(m.updated_at),
+  );
   const forecasts = mixBoards(groupEvents(quoted)).slice(0, 18).map((b) => ({
     href: `/market/${encodeURIComponent(b.markets[0].symbol)}`,
     title: b.title,
@@ -57,14 +63,7 @@ export default async function Home(props: PageProps<"/">) {
     <>
     <ForecastBar items={forecasts} />
     <main className="mx-auto w-full max-w-[1680px] px-6 py-6 lg:px-8">
-      <h1 className="max-w-3xl text-4xl font-medium tracking-[-0.03em] text-white sm:text-5xl">
-        Explore predictions. Understand what&apos;s behind the odds.
-      </h1>
-      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[#9aa3ad] sm:text-base">
-        The percent is the displayed price. Thin Ice reads the order book behind it and checks whether related contracts agree. It does not place trades.
-      </p>
-
-      <nav className="mt-6 flex gap-1 overflow-x-auto border-b border-white/10 text-[13px]" aria-label="Categories">
+      <nav className="flex gap-1 overflow-x-auto border-b border-white/10 text-[13px]" aria-label="Categories">
         <Chip href={q ? `/?q=${encodeURIComponent(q)}` : "/"} active={!category}>All</Chip>
         {categories.map((c) => (
           <Chip

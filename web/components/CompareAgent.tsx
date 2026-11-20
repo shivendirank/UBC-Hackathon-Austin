@@ -28,6 +28,9 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const [voiceConfigured, setVoiceConfigured] = useState(false);
   const [wakeArmed, setWakeArmed] = useState(false);
   const [needsWakeGesture, setNeedsWakeGesture] = useState(false);
+  /** Visible at load; slides off-screen on scroll; wake / inquire brings it back. */
+  const [orbVisible, setOrbVisible] = useState(true);
+  const [inquiring, setInquiring] = useState(false);
   const [question, setQuestion] = useState("");
   const [level, setLevel] = useState<number | undefined>(undefined);
   const [messages, setMessages] = useState<Msg[]>([
@@ -39,6 +42,8 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const sessionBusy = useRef(false);
   const activateRef = useRef<() => Promise<void>>(async () => {});
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const inquiringRef = useRef(false);
+  inquiringRef.current = inquiring;
 
   useEffect(() => {
     const el = transcriptRef.current;
@@ -81,6 +86,8 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
 
   useEffect(() => {
     if (status === "connected") {
+      setInquiring(true);
+      setOrbVisible(true);
       setLevel(0.7);
       setMessages((m) =>
         m.some((x) => x.text.includes("Voice connected"))
@@ -92,12 +99,34 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     }
   }, [status]);
 
+  // Dock into the right edge once the user scrolls; stay out while inquiring.
+  useEffect(() => {
+    const SCROLL_HIDE_PX = 56;
+    const sync = () => {
+      if (inquiringRef.current) {
+        setOrbVisible(true);
+        return;
+      }
+      setOrbVisible(window.scrollY < SCROLL_HIDE_PX);
+    };
+    sync();
+    window.addEventListener("scroll", sync, { passive: true });
+    return () => window.removeEventListener("scroll", sync);
+  }, []);
+
+  const dockIfScrolled = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (window.scrollY >= 56) setOrbVisible(false);
+  }, []);
+
   const connected = status === "connected";
   const listening = connected || busy || wakeArmed;
 
   const activate = useCallback(async () => {
     if (sessionBusy.current) return;
     sessionBusy.current = true;
+    setInquiring(true);
+    setOrbVisible(true);
     setBusy(true);
     setOpen(true);
     setMessages((m) => [...m, { role: "system", text: "Starting ElevenLabs session…" }]);
@@ -108,6 +137,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       });
       if (!sess.configured || (!sess.signed_url && !sess.agent_id)) {
         setVoiceConfigured(false);
+        setInquiring(false);
         setMessages((m) => [
           ...m,
           {
@@ -118,6 +148,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
               "ElevenLabs is not configured. Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in backend/.env.",
           },
         ]);
+        dockIfScrolled();
         return;
       }
       setVoiceConfigured(true);
@@ -147,12 +178,14 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       });
       appendTranscript("system", "Listening. Speak, or type below — both show in the transcript.");
     } catch (e) {
+      setInquiring(false);
       appendTranscript("agent", e instanceof Error ? e.message : "Could not start voice session");
+      dockIfScrolled();
     } finally {
       setBusy(false);
       sessionBusy.current = false;
     }
-  }, [symbol, symbols, title, tools, startSession, appendTranscript]);
+  }, [symbol, symbols, title, tools, startSession, appendTranscript, dockIfScrolled]);
 
   activateRef.current = activate;
 
@@ -164,6 +197,8 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     enabled: wakeArmed,
     paused: connected || busy,
     onWake: () => {
+      setInquiring(true);
+      setOrbVisible(true);
       if (!voiceConfigured) {
         setOpen(true);
         appendTranscript("system", "Wake heard, but ElevenLabs is not configured.");
@@ -245,8 +280,27 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     } catch {
       /* none */
     }
+    setInquiring(false);
+    setOpen(false);
     setMessages((m) => [...m, { role: "system", text: "Voice ended. Wake word listening resumes if armed." }]);
-  }, [endSession]);
+    // Let status settle, then slide away if the page is scrolled.
+    window.setTimeout(() => dockIfScrolled(), 80);
+  }, [endSession, dockIfScrolled]);
+
+  // When a live session drops on its own, treat inquiry as done.
+  const wasConnected = useRef(false);
+  useEffect(() => {
+    if (connected) {
+      wasConnected.current = true;
+      return;
+    }
+    if (!wasConnected.current) return;
+    wasConnected.current = false;
+    if (sessionBusy.current || busy) return;
+    setInquiring(false);
+    setOpen(false);
+    dockIfScrolled();
+  }, [connected, busy, dockIfScrolled]);
 
   const askText = useCallback(async () => {
     const q = question.trim();
@@ -286,8 +340,13 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   return (
     <>
       <WidgetHost />
-      <div className="pointer-events-none fixed top-[10vh] right-4 z-40 flex flex-col items-end gap-3 sm:right-6">
-        {open && (
+      <div
+        className={`pointer-events-none fixed top-[15vh] right-4 z-40 flex flex-col items-end gap-3 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:right-6 ${
+          orbVisible ? "translate-x-0" : "translate-x-[calc(100%+1.5rem)]"
+        }`}
+        aria-hidden={!orbVisible}
+      >
+        {open && orbVisible && (
           <div className="pointer-events-auto w-[min(100vw-2rem,23rem)] overflow-hidden rounded-[22px] border border-white/20 bg-[rgba(12,16,22,0.55)] shadow-[0_24px_80px_rgba(0,0,0,0.45)] ring-1 ring-inset ring-white/10 backdrop-blur-2xl">
             <div className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/[0.04] px-4 py-3">
               <div className="min-w-0">
@@ -317,7 +376,13 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
                 />
                 <button
                   type="button"
-                  onClick={() => setOpen(false)}
+                  onClick={() => {
+                    setOpen(false);
+                    if (!connected && !busy) {
+                      setInquiring(false);
+                      dockIfScrolled();
+                    }
+                  }}
                   className="rounded-full px-2 py-1 text-xs text-[#9aa3ad] transition hover:bg-white/10 hover:text-white"
                 >
                   Close
@@ -427,13 +492,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           </div>
         )}
 
-        {needsWakeGesture && wakeSupported && !wakeArmed && (
-          <p className="pointer-events-none max-w-[12rem] rounded-xl border border-white/15 bg-[rgba(12,16,22,0.65)] px-3 py-2 text-right text-[10px] leading-snug text-[#c5ced6] backdrop-blur-md">
-            Click anywhere once to enable mic — then just say “Hey Gemini”
-          </p>
-        )}
-
-        {wakeArmed && !connected && (
+        {orbVisible && wakeArmed && !connected && (
           <p className="pointer-events-none max-w-[11rem] text-right text-[10px] leading-snug text-[#9aa3ad]">
             {wakeListening ? "Listening — say “Hey Gemini”" : "Starting wake listener…"}
             {lastHeard ? <span className="mt-0.5 block truncate text-[#6f7882]">Heard: {lastHeard}</span> : null}
@@ -442,13 +501,17 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
 
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => {
+            setOrbVisible(true);
+            setOpen((v) => !v);
+          }}
           aria-label="Open Thin Ice agent transcript"
-          className={`pointer-events-auto h-[88px] w-[88px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[104px] sm:w-[104px] ${
+          tabIndex={orbVisible ? 0 : -1}
+          className={`pointer-events-auto h-[66px] w-[66px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[78px] sm:w-[78px] ${
             wakeListening && !connected
               ? "border-[#9aebff]/50 ring-[#9aebff]/20"
               : "border-white/25 ring-white/15 hover:border-white/40"
-          }`}
+          } ${orbVisible ? "" : "pointer-events-none"}`}
         >
           <div className="relative h-full w-full">
             <Strands
