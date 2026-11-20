@@ -11,7 +11,12 @@ const TONE: Record<Verdict["kind"], string> = {
 export function VerdictBlock({ verdict, compact = false }: { verdict: Verdict; compact?: boolean }) {
   return (
     <div>
-      <p className={`text-sm font-semibold ${TONE[verdict.kind]}`}>{verdict.title}</p>
+      <p className={`text-sm font-semibold ${TONE[verdict.kind]}`}>
+        {verdict.title}
+        {verdict.freshness !== "live" && verdict.kind !== "insufficient" ? (
+          <span className="ml-1 font-medium text-[#8b95a1]">· {verdict.ageLabel}</span>
+        ) : null}
+      </p>
       <p className={`mt-1 text-sm leading-snug text-[#c5ced6] ${compact ? "line-clamp-3" : ""}`}>{verdict.reason}</p>
       {!compact && (
         <ul className="mt-3 space-y-1 text-sm text-[#9aa3ad]">

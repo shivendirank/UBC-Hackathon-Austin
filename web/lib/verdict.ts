@@ -3,11 +3,21 @@ import { bookStatus } from "@/lib/status";
 
 /**
  * Display rules on top of the existing formula. They do not change grades or receipts.
- * A book older than 30 minutes is not treated as a current assessment.
- * Healthy liquidity means grade A, B, or C in scoring.py: a large share of this market's
- * own visible depth sits in the 10¢ move window (and the book does not run out first).
+ *
+ * Freshness is separate from the liquidity reading:
+ * - live / recent / aging → still show Fragile / Healthy / Inconsistent from the last book
+ * - archived (or empty) → Insufficient data (no current reading worth trusting as current)
+ *
+ * Healthy liquidity means grade A, B, or C in scoring.py.
  */
-export const BOOK_FRESH_S = 30 * 60;
+export const BOOK_LIVE_S = 15 * 60;
+export const BOOK_RECENT_S = 2 * 60 * 60;
+export const BOOK_AGING_S = 24 * 60 * 60;
+
+/** @deprecated use BOOK_LIVE_S / bookFreshness — kept so older imports keep working */
+export const BOOK_FRESH_S = BOOK_LIVE_S;
+
+export type FreshnessBand = "live" | "recent" | "aging" | "archived";
 
 export type VerdictKind = "healthy" | "fragile" | "inconsistent" | "insufficient";
 
@@ -18,6 +28,8 @@ export type Verdict = {
   evidence: string[];
   action: string;
   href: string;
+  freshness: FreshnessBand;
+  ageLabel: string;
 };
 
 const TITLE: Record<VerdictKind, string> = {
@@ -27,8 +39,60 @@ const TITLE: Record<VerdictKind, string> = {
   insufficient: "Insufficient data",
 };
 
+const AGE_CHIP: Record<FreshnessBand, string> = {
+  live: "Live",
+  recent: "Recent book",
+  aging: "Older book",
+  archived: "Archived book",
+};
+
+export function bookAgeSeconds(updatedAt: number, now = Date.now() / 1000): number {
+  return Math.max(0, now - updatedAt);
+}
+
+export function bookFreshness(updatedAt: number, now = Date.now() / 1000): FreshnessBand {
+  const age = bookAgeSeconds(updatedAt, now);
+  if (age <= BOOK_LIVE_S) return "live";
+  if (age <= BOOK_RECENT_S) return "recent";
+  if (age <= BOOK_AGING_S) return "aging";
+  return "archived";
+}
+
+/** True when the book is new enough to show the Live pulse. */
 export function bookIsFresh(updatedAt: number, now = Date.now() / 1000): boolean {
-  return now - updatedAt <= BOOK_FRESH_S;
+  return bookFreshness(updatedAt, now) === "live";
+}
+
+/** Higher = prefer on the board (live first, archived last). */
+export function freshnessRank(updatedAt: number, now = Date.now() / 1000): number {
+  switch (bookFreshness(updatedAt, now)) {
+    case "live":
+      return 3;
+    case "recent":
+      return 2;
+    case "aging":
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+export function formatBookAge(updatedAt: number, now = Date.now() / 1000): string {
+  const age = bookAgeSeconds(updatedAt, now);
+  if (age < 60) return "just now";
+  if (age < 3600) return `${Math.round(age / 60)} min ago`;
+  if (age < 86400) {
+    const h = Math.round(age / 3600);
+    return h === 1 ? "1 hour ago" : `${h} hours ago`;
+  }
+  const d = Math.round(age / 86400);
+  return d === 1 ? "1 day ago" : `${d} days ago`;
+}
+
+export function freshnessLabel(updatedAt: number, now = Date.now() / 1000): string {
+  const band = bookFreshness(updatedAt, now);
+  if (band === "live") return AGE_CHIP.live;
+  return `${AGE_CHIP[band]} · ${formatBookAge(updatedAt, now)}`;
 }
 
 export function inconsistentSymbols(relations: Relation[]): Set<string> {
@@ -54,37 +118,27 @@ export function relatedCheck(relations: Relation[], symbol: string): Relation | 
   return broken ?? hits[0];
 }
 
-export function assess(market: Market, inconsistent = false): Verdict {
-  const href = `/market/${encodeURIComponent(market.symbol)}`;
-  const fresh = bookIsFresh(market.updated_at);
-  const status = bookStatus(market);
-  const observed = `Order book observed ${new Date(market.updated_at * 1000).toLocaleString()}.`;
-  const trade = market.score.last_trade_ts
-    ? `Last trade ${new Date(market.score.last_trade_ts * 1000).toLocaleString()}. That is not the book time.`
-    : "No trade is on record for this contract.";
-
-  if (!fresh || status === "Empty" || market.odds_pct == null) {
-    const why = !fresh
-      ? "This order book is more than 30 minutes old, so Thin Ice is not treating it as a current reading."
-      : "There is no two-sided quote, so this percent is not a real price.";
-    return {
-      kind: "insufficient",
-      title: TITLE.insufficient,
-      reason: why,
-      evidence: [observed, trade],
-      action: "Understand this market",
-      href,
-    };
+function ageReason(band: FreshnessBand, ageText: string): string {
+  if (band === "live") return "";
+  if (band === "recent") {
+    return ` The order book was recorded ${ageText}, so treat this as a recent reading — not a live tick.`;
   }
+  if (band === "aging") {
+    return ` The order book is ${ageText}. Depth and the percent can drift before the next refresh.`;
+  }
+  return ` The last order book is ${ageText}, so Thin Ice is not treating this as a current reading.`;
+}
 
+function liquidityVerdict(
+  market: Market,
+  inconsistent: boolean,
+  status: ReturnType<typeof bookStatus>,
+): { kind: Exclude<VerdictKind, "insufficient">; reason: string } {
   if (inconsistent) {
     return {
       kind: "inconsistent",
-      title: TITLE.inconsistent,
-      reason: "A verified group that includes this contract breaks its price rule. That is a pricing disagreement, not a claim about why it exists.",
-      evidence: [observed, trade],
-      action: "Compare related predictions",
-      href: `/compare?symbol=${encodeURIComponent(market.symbol)}`,
+      reason:
+        "A verified group that includes this contract breaks its price rule. That is a pricing disagreement, not a claim about why it exists.",
     };
   }
 
@@ -92,11 +146,8 @@ export function assess(market: Market, inconsistent = false): Verdict {
   if (healthy) {
     return {
       kind: "healthy",
-      title: TITLE.healthy,
-      reason: "A large share of this market's own visible depth sits inside a 10¢ move, so the displayed price is relatively hard to shove with the size that is on the book. That is Thin Ice's current bar for healthy liquidity. It is not a forecast.",
-      evidence: [observed, trade, `Spread ${market.spread_c ?? "—"}¢.`],
-      action: "Understand this market",
-      href,
+      reason:
+        "A large share of this market's own visible depth sits inside a 10¢ move, so the displayed price is relatively hard to shove with the size that is on the book. That is Thin Ice's current bar for healthy liquidity. It is not a forecast.",
     };
   }
 
@@ -106,13 +157,53 @@ export function assess(market: Market, inconsistent = false): Verdict {
     depthPct != null ? ` About ${Math.round(depthPct)}% of the cheaper side sits in that 10¢ window.` : "";
   return {
     kind: "fragile",
-    title: TITLE.fragile,
     reason: ranOut
       ? "Few orders are available near the current price. The visible book runs out before the odds can move 10¢, so a larger trade can change the price you actually get."
       : `Relative to this market's own book, too little depth sits behind a 10¢ move, or the spread is wide.${depthBit} That is below Thin Ice's current bar for healthy liquidity.`,
-    evidence: [observed, trade, `Spread ${market.spread_c ?? "—"}¢.`],
-    action: "Understand this market",
-    href,
+  };
+}
+
+export function assess(market: Market, inconsistent = false): Verdict {
+  const href = `/market/${encodeURIComponent(market.symbol)}`;
+  const freshness = bookFreshness(market.updated_at);
+  const ageLabel = freshnessLabel(market.updated_at);
+  const ageText = formatBookAge(market.updated_at);
+  const status = bookStatus(market);
+  const observed = `Order book observed ${new Date(market.updated_at * 1000).toLocaleString()} (${ageText}).`;
+  const trade = market.score.last_trade_ts
+    ? `Last trade ${new Date(market.score.last_trade_ts * 1000).toLocaleString()}. That is not the book time.`
+    : "No trade is on record for this contract.";
+
+  const empty = status === "Empty" || market.odds_pct == null;
+
+  // Only archive / empty books lose the liquidity reading entirely.
+  if (empty || freshness === "archived") {
+    const why = empty
+      ? "There is no two-sided quote, so this percent is not a real price."
+      : `This order book is ${ageText}, so Thin Ice is not treating it as a current reading. Start or wait for the recorder to refresh it.`;
+    return {
+      kind: "insufficient",
+      title: TITLE.insufficient,
+      reason: why,
+      evidence: [observed, trade],
+      action: "Understand this market",
+      href,
+      freshness,
+      ageLabel,
+    };
+  }
+
+  const liq = liquidityVerdict(market, inconsistent, status);
+  const ageNote = ageReason(freshness, ageText);
+  return {
+    kind: liq.kind,
+    title: TITLE[liq.kind],
+    reason: `${liq.reason}${ageNote}`,
+    evidence: [observed, trade, `Spread ${market.spread_c ?? "—"}¢.`, `Book age: ${ageLabel}.`],
+    action: liq.kind === "inconsistent" ? "Compare related predictions" : "Understand this market",
+    href: liq.kind === "inconsistent" ? `/compare?symbol=${encodeURIComponent(market.symbol)}` : href,
+    freshness,
+    ageLabel,
   };
 }
 

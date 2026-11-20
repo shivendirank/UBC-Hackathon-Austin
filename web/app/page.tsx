@@ -6,7 +6,7 @@ import { ForecastBar } from "@/components/ForecastBar";
 import { findMarket, getMarket, getMarkets, getRelations, type HistoryPoint, type Market } from "@/lib/api";
 import { groupEvents, mixBoards } from "@/lib/events";
 import { bookStatus } from "@/lib/status";
-import { bookIsFresh, inconsistentSymbols } from "@/lib/verdict";
+import { freshnessRank, inconsistentSymbols } from "@/lib/verdict";
 
 export default async function Home(props: PageProps<"/">) {
   const sp = await props.searchParams;
@@ -18,10 +18,12 @@ export default async function Home(props: PageProps<"/">) {
   const categories = [...new Set(all.map((m) => m.category).filter((c): c is string => Boolean(c)))].sort();
 
   const isDemo = (m: Market) => Boolean(m.synthetic || m.event_title?.includes("Synthetic replay"));
-  // Show every two-sided book; prefer freshly recorded ones so the grid is full while the recorder catches up.
+  // Prefer live → recent → aging → archived so the board leads with usable readings.
+  const byFreshness = (a: Market, b: Market) =>
+    freshnessRank(b.updated_at) - freshnessRank(a.updated_at) || a.move_cost_usd - b.move_cost_usd;
   let markets = all
     .filter((m) => bookStatus(m) !== "Empty" && !isDemo(m))
-    .sort((a, b) => Number(bookIsFresh(b.updated_at)) - Number(bookIsFresh(a.updated_at)));
+    .sort(byFreshness);
   if (category) markets = markets.filter((m) => m.category === category);
   if (q) {
     const needle = q.toLowerCase();
@@ -32,7 +34,7 @@ export default async function Home(props: PageProps<"/">) {
           bookStatus(m) !== "Empty" &&
           [m.event_title, m.label, m.symbol, m.category].some((v) => v?.toLowerCase().includes(needle)),
       )
-      .sort((a, b) => Number(bookIsFresh(b.updated_at)) - Number(bookIsFresh(a.updated_at)));
+      .sort(byFreshness);
   }
 
   let direct: Market | null = null;
@@ -50,9 +52,10 @@ export default async function Home(props: PageProps<"/">) {
     title: b.title,
     pct: b.markets[0].odds_pct ?? 0,
   }));
-  const boards = mixBoards(groupEvents(markets));
-  const featured = boards[0];
-  const rest = boards.slice(1);
+  // Freshest event leads the hero; mix the rest so one category cannot fill the grid.
+  const grouped = groupEvents(markets);
+  const featured = grouped[0];
+  const rest = mixBoards(grouped.slice(1));
   const histories: HistoryPoint[][] = [];
   if (featured) {
     for (const m of featured.markets.slice(0, 2)) {
@@ -83,7 +86,7 @@ export default async function Home(props: PageProps<"/">) {
         </p>
       )}
 
-      {boards.length === 0 ? (
+      {grouped.length === 0 ? (
         <p className="mt-10 text-sm text-[#8b95a1]">No markets match that search.</p>
       ) : (
         <>

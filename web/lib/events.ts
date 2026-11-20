@@ -1,4 +1,5 @@
 import type { Market } from "@/lib/api";
+import { BOOK_LIVE_S, freshnessRank } from "@/lib/verdict";
 
 export type EventBoard = {
   key: string;
@@ -33,9 +34,20 @@ export function groupEvents(markets: Market[]): EventBoard[] {
   }
   const boards = [...map.values()];
   for (const b of boards) {
-    b.markets.sort((a, c) => (c.odds_pct != null ? 1 : 0) - (a.odds_pct != null ? 1 : 0) || c.move_cost_usd - a.move_cost_usd);
+    // Prefer fresher contracts inside an event, then deeper books.
+    b.markets.sort(
+      (a, c) =>
+        freshnessRank(c.updated_at) - freshnessRank(a.updated_at) ||
+        (c.odds_pct != null ? 1 : 0) - (a.odds_pct != null ? 1 : 0) ||
+        c.move_cost_usd - a.move_cost_usd,
+    );
   }
-  boards.sort((a, b) => (b.markets[0]?.move_cost_usd ?? 0) - (a.markets[0]?.move_cost_usd ?? 0));
+  // Lead with live/recent boards, then deeper liquidity.
+  boards.sort(
+    (a, b) =>
+      freshnessRank(b.updated) - freshnessRank(a.updated) ||
+      (b.markets[0]?.move_cost_usd ?? 0) - (a.markets[0]?.move_cost_usd ?? 0),
+  );
   return boards;
 }
 
@@ -47,6 +59,14 @@ export function mixBoards(boards: EventBoard[]): EventBoard[] {
     const list = buckets.get(key) ?? [];
     list.push(b);
     buckets.set(key, list);
+  }
+  // Keep each category ordered by freshness (groupEvents already sorted; reaffirm).
+  for (const list of buckets.values()) {
+    list.sort(
+      (a, b) =>
+        freshnessRank(b.updated) - freshnessRank(a.updated) ||
+        (b.markets[0]?.move_cost_usd ?? 0) - (a.markets[0]?.move_cost_usd ?? 0),
+    );
   }
   const rank = ["Sports", "Politics", "Economics", "Weather", "Commodities", "Tech", "Crypto", "Synthetic"];
   const keys = [...buckets.keys()].sort((a, b) => {
@@ -78,5 +98,5 @@ export function ago(ts: number): string {
 }
 
 export function isLive(ts: number): boolean {
-  return Date.now() / 1000 - ts < 30 * 60;
+  return Date.now() / 1000 - ts <= BOOK_LIVE_S;
 }

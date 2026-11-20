@@ -4,7 +4,8 @@ import { GradePill } from "@/components/GradePill";
 import { LiveDualOddsChart } from "@/components/LiveDualOddsChart";
 import { Sticker } from "@/components/Stickers";
 import { type EventBoard } from "@/lib/events";
-import { assess, bookIsFresh, relatedCheck } from "@/lib/verdict";
+import { FreshnessBadge } from "@/components/FreshnessBadge";
+import { assess, relatedCheck } from "@/lib/verdict";
 
 const COLORS = ["#28cc95", "#4c8dff", "#f26500"];
 
@@ -34,12 +35,7 @@ export function FeaturedBoard({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-xl font-semibold text-white">{board.title}</h2>
-                {bookIsFresh(board.updated) && (
-                  <span className="inline-flex items-center gap-1 text-xs text-[#ff8b98]">
-                    <span className="live-dot h-1.5 w-1.5 rounded-full bg-[#ff3b4e]" />
-                    Live
-                  </span>
-                )}
+                <FreshnessBadge updatedAt={board.updated} />
               </div>
               <p className="mt-1 text-sm text-[#8b95a1]">{board.category ?? "Market"}</p>
             </div>
@@ -54,7 +50,10 @@ export function FeaturedBoard({
           <div className="mt-4 flex items-center gap-3">
             <GradePill grade={lead.grade} size="lg" />
             <div>
-              <p className="text-sm font-semibold text-white">{verdict.title}</p>
+              <p className="text-sm font-semibold text-white">
+                {verdict.title}
+                {verdict.freshness !== "live" && verdict.kind !== "insufficient" ? ` · ${verdict.ageLabel}` : ""}
+              </p>
               <p className="text-xs text-[#8b95a1]">Depth grade {lead.grade} · ${lead.move_cost_usd.toFixed(0)} to move 10¢</p>
             </div>
           </div>
@@ -114,7 +113,9 @@ function OutcomeButton({ market, color, inconsistent }: { market: Market; color:
         {market.odds_pct != null ? `${market.odds_pct.toFixed(0)}%` : "—"}
       </span>
       <span className="mt-1 block text-xs text-[#9aa3ad]">
-        {inconsistent ? "Inconsistent with related" : `Grade ${market.grade} · ${verdict.title}`}
+        {inconsistent
+          ? "Inconsistent with related"
+          : `Grade ${market.grade} · ${verdict.title}${verdict.freshness !== "live" && verdict.kind !== "insufficient" ? ` · ${verdict.ageLabel}` : ""}`}
       </span>
     </Link>
   );

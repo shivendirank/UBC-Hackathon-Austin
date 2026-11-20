@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { ConversationProvider } from "@elevenlabs/react";
 import { ActiveMarketProvider } from "@/lib/active-market";
 import { WidgetProvider } from "@/lib/widgets";
@@ -11,7 +11,9 @@ export function CopilotProviders({ children }: { children: ReactNode }) {
     <ActiveMarketProvider>
       <WidgetProvider>
         <ConversationProvider>
-          <ActiveMarketSync />
+          <Suspense fallback={null}>
+            <ActiveMarketSync />
+          </Suspense>
           {children}
         </ConversationProvider>
       </WidgetProvider>

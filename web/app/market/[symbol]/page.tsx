@@ -4,8 +4,9 @@ import { GradePill } from "@/components/GradePill";
 import { MoveCostChart, OddsChart } from "@/components/MoveCostChart";
 import { Sticker } from "@/components/Stickers";
 import { WatchButton } from "@/components/WatchButton";
-import { API_URL, getIncidents, getMarket, getMarkets, getRelations, usd } from "@/lib/api";
-import { bookIsFresh, assess, relatedCheck, relationStory } from "@/lib/verdict";
+import { apiBase, getIncidents, getMarket, getMarkets, getRelations, usd } from "@/lib/api";
+import { FreshnessBadge } from "@/components/FreshnessBadge";
+import { assess, relatedCheck, relationStory } from "@/lib/verdict";
 
 export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
   const { symbol } = await props.params;
@@ -39,12 +40,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-semibold text-white">{m.event_title}</h1>
-                  {bookIsFresh(m.updated_at) && (
-                    <span className="inline-flex items-center gap-1 text-xs text-[#ff8b98]">
-                      <span className="live-dot h-1.5 w-1.5 rounded-full bg-[#ff3b4e]" />
-                      Live
-                    </span>
-                  )}
+                  <FreshnessBadge updatedAt={m.updated_at} />
                 </div>
                 <p className="mt-1 text-sm text-[#8b95a1]">{m.category}</p>
               </div>
@@ -66,7 +62,12 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
                   <span className="mt-2 block text-xs text-[#8b95a1]">Depth grade</span>
                 </div>
               </div>
-              <span className="mt-2 block text-sm text-[#9aa3ad]">{verdict.title} · {usd(m.move_cost_usd)} to move 10¢</span>
+              <span className="mt-2 block text-sm text-[#9aa3ad]">
+                {verdict.title}
+                {verdict.freshness !== "live" && verdict.kind !== "insufficient" ? ` · ${verdict.ageLabel}` : ""}
+                {" · "}
+                {usd(m.move_cost_usd)} to move 10¢
+              </span>
             </div>
             <p className="mt-3 text-sm text-[#c5ced6]">{verdict.reason}</p>
             {focusRelation?.latest_check && (
@@ -218,7 +219,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
         {m.snapshot_hash && (
           <p className="mt-2 text-sm">
             Snapshot{" "}
-            <a className="text-sky-700 hover:underline dark:text-sky-400" href={`${API_URL}/api/snapshots/${m.snapshot_hash}.json`}>
+            <a className="text-sky-700 hover:underline dark:text-sky-400" href={`${apiBase()}/api/snapshots/${m.snapshot_hash}.json`}>
               {m.snapshot_hash.slice(0, 12)}…
             </a>
           </p>
@@ -230,7 +231,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
             {m.receipts.map((r) => (
               <li key={r.id}>
                 {new Date(r.ts * 1000).toLocaleString()}{" "}
-                <a className="text-sky-700 hover:underline dark:text-sky-400" href={`${API_URL}/api/snapshots/${r.snapshot_hash}.json`}>snapshot</a>
+                <a className="text-sky-700 hover:underline dark:text-sky-400" href={`${apiBase()}/api/snapshots/${r.snapshot_hash}.json`}>snapshot</a>
                 {r.explorer_url && <> <a className="text-sky-700 hover:underline dark:text-sky-400" href={r.explorer_url}>Solana</a></>}
               </li>
             ))}

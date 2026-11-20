@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_URL, type HistoryPoint, type Market } from "@/lib/api";
+import { apiBase, type HistoryPoint, type Market } from "@/lib/api";
 import { DualOddsChart } from "@/components/MoveCostChart";
 
 type SeriesIn = { market: Market; points: HistoryPoint[]; stroke: string; label: string };
@@ -61,7 +61,7 @@ export function LiveDualOddsChart({ series }: { series: SeriesIn[] }) {
       try {
         const batches = await Promise.all(
           series.map(async (s) => {
-            const r = await fetch(`${API_URL}/api/markets/${encodeURIComponent(s.market.symbol)}`);
+            const r = await fetch(`${apiBase()}/api/markets/${encodeURIComponent(s.market.symbol)}`);
             if (!r.ok) return seedHistory(s.points, s.market);
             const detail = (await r.json()) as Market & { history?: HistoryPoint[] };
             return seedHistory(detail.history ?? s.points, {

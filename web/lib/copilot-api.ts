@@ -1,9 +1,11 @@
 /** Browser-safe Thin Ice API helpers for the ElevenLabs orb. */
 
+import { apiBase } from "@/lib/api-base";
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${API_URL}${path}`, init);
+  const r = await fetch(`${apiBase()}${path}`, init);
   if (!r.ok) throw new Error(`${r.status} ${path}`);
   return (await r.json()) as T;
 }

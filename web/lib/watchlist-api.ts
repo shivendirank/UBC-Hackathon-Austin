@@ -1,4 +1,4 @@
-import { API_URL, type Market } from "@/lib/api";
+import { apiBase, type Market } from "@/lib/api";
 import { readToken } from "@/lib/session";
 
 function authHeaders(): HeadersInit {
@@ -9,7 +9,7 @@ function authHeaders(): HeadersInit {
 }
 
 export async function fetchWatchlist(): Promise<{ symbols: string[]; markets: Market[] }> {
-  const r = await fetch(`${API_URL}/api/watchlist`, { headers: authHeaders(), cache: "no-store" });
+  const r = await fetch(`${apiBase()}/api/watchlist`, { headers: authHeaders(), cache: "no-store" });
   if (r.status === 401) throw new Error("auth");
   if (!r.ok) throw new Error("watchlist");
   const data = await r.json();
@@ -20,7 +20,7 @@ export async function fetchWatchlist(): Promise<{ symbols: string[]; markets: Ma
 }
 
 export async function setWatching(symbol: string, on: boolean): Promise<string[]> {
-  const r = await fetch(`${API_URL}/api/watchlist/${encodeURIComponent(symbol)}`, {
+  const r = await fetch(`${apiBase()}/api/watchlist/${encodeURIComponent(symbol)}`, {
     method: on ? "PUT" : "DELETE",
     headers: authHeaders(),
   });

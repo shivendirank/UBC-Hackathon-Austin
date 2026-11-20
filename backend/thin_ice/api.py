@@ -17,8 +17,14 @@ from . import config, copilot, csv_store, db, incidents, service
 
 app = FastAPI(title="Thin Ice", version="0.1.0",
               description="How much would it cost to move these odds? Live grades for Gemini prediction markets.")
-app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_methods=["*"], allow_headers=["*"],
-                   allow_credentials=True)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=config.CORS_ORIGINS,
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_methods=["*"],
+    allow_headers=["*"],
+    allow_credentials=True,
+)
 
 conn = db.connect()
 

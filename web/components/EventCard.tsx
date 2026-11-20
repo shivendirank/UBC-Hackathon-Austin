@@ -99,6 +99,9 @@ function Outcome({
           className={`inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold marker:content-none [&::-webkit-details-marker]:hidden ${CHIP[verdict.kind]}`}
         >
           {verdict.title}
+          {verdict.freshness !== "live" && verdict.kind !== "insufficient" && (
+            <span className="font-medium opacity-80">· {verdict.ageLabel}</span>
+          )}
           <span aria-hidden className="text-[10px] opacity-70 transition-transform group-open/verdict:rotate-180">
             ▾
           </span>
@@ -111,7 +114,7 @@ function Outcome({
             Similar markets: {related.latest_check.summary}
           </p>
         )}
-        <p className="mt-2 text-xs text-[#8b95a1]">Order book observed {observed}</p>
+        <p className="mt-2 text-xs text-[#8b95a1]">Order book observed {observed} · {verdict.ageLabel}</p>
       </details>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
         <Link href={verdict.href} className="font-medium text-white underline decoration-white/30 underline-offset-4">

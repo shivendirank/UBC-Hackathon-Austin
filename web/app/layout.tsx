@@ -25,7 +25,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-full flex-col bg-[#07080a] text-[#f4f6f8]">
         <CopilotProviders>
-          <SiteHeader />
+          <Suspense fallback={<header className="h-16 border-b border-white/10 bg-[#07080a]" />}>
+            <SiteHeader />
+          </Suspense>
           {children}
           <Suspense fallback={null}>
             <AgentOrbHost />

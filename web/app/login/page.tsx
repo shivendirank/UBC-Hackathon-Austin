@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState, type FormEvent } from "react";
-import { API_URL } from "@/lib/api";
+import { apiBase } from "@/lib/api";
 import { clearSession, saveSession } from "@/lib/session";
 
 function safeNext(raw: string | null): string {
@@ -27,7 +27,7 @@ function LoginForm() {
     setBusy(true);
     try {
       const path = mode === "login" ? "/api/auth/login" : "/api/auth/register";
-      const r = await fetch(`${API_URL}${path}`, {
+      const r = await fetch(`${apiBase()}${path}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, name }),

@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CONCLUSION_WORDS, StatusPill } from "@/components/StatusPill";
-import type { IncidentDetail } from "@/lib/api";
+import { apiBase, type IncidentDetail } from "@/lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const POLL_MS = 4000;
 const MAX_WAIT_MS = 3 * 60 * 1000;
 
@@ -26,7 +25,7 @@ export function InvestigatePanel({ incidentId, initial }: Props) {
     if (phase !== "waiting") return;
     const id = window.setInterval(async () => {
       try {
-        const r = await fetch(`${API_URL}/api/incidents/${incidentId}`, { cache: "no-store" });
+        const r = await fetch(`${apiBase()}/api/incidents/${incidentId}`, { cache: "no-store" });
         if (!r.ok) return;
         const next = (await r.json()) as IncidentDetail;
         setInc(next);
@@ -51,7 +50,7 @@ export function InvestigatePanel({ incidentId, initial }: Props) {
     setFallback(false);
     setPhase("requesting");
     try {
-      const r = await fetch(`${API_URL}/api/incidents/${incidentId}/investigate`, { method: "POST" });
+      const r = await fetch(`${apiBase()}/api/incidents/${incidentId}/investigate`, { method: "POST" });
       const body = await r.json().catch(() => ({}));
       if (r.status === 503) {
         setFallback(true);
