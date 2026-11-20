@@ -1,11 +1,11 @@
 import { connection } from "next/server";
-import { apiBase } from "@/lib/api-base";
+import { apiBase, apiFetchHeaders } from "@/lib/api-base";
 
 // Types mirror backend/thin_ice/service.py. Keep them in sync (see CLAUDE.md, API contract).
 
 /** @deprecated prefer apiBase() — kept for client modules that import a constant */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-export { apiBase };
+export { apiBase, browserApiUrl } from "@/lib/api-base";
 
 export type Grade = "A" | "B" | "C" | "D" | "F";
 
@@ -157,7 +157,10 @@ export type MarketDetail = Market & {
 async function get<T>(path: string): Promise<T | null> {
   await connection(); // live data: render at request time, never at build time
   try {
-    const r = await fetch(`${apiBase()}${path}`, { cache: "no-store" });
+    const r = await fetch(`${apiBase()}${path}`, {
+      cache: "no-store",
+      headers: apiFetchHeaders(),
+    });
     if (r.status === 404) return null;
     if (!r.ok) throw new Error(`${r.status} ${path}`);
     return (await r.json()) as T;

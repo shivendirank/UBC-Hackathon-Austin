@@ -5,7 +5,7 @@ import { MarketGradePanel } from "@/components/MarketGradePanel";
 import { MoveCostChart, OddsChart } from "@/components/MoveCostChart";
 import { Sticker } from "@/components/Stickers";
 import { WatchButton } from "@/components/WatchButton";
-import { apiBase, getIncidents, getMarket, getMarkets, getRelations, usd } from "@/lib/api";
+import { browserApiUrl, getIncidents, getMarket, getMarkets, getRelations, usd } from "@/lib/api";
 import { FreshnessBadge } from "@/components/FreshnessBadge";
 import { assess, relatedCheck, relationStory } from "@/lib/verdict";
 
@@ -210,7 +210,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
         {m.snapshot_hash && (
           <p className="mt-2 text-sm">
             Snapshot{" "}
-            <a className="text-sky-700 hover:underline dark:text-sky-400" href={`${apiBase()}/api/snapshots/${m.snapshot_hash}.json`}>
+            <a className="text-sky-700 hover:underline dark:text-sky-400" href={browserApiUrl(`/api/snapshots/${m.snapshot_hash}.json`)}>
               {m.snapshot_hash.slice(0, 12)}…
             </a>
           </p>
@@ -222,7 +222,7 @@ export default async function MarketPage(props: PageProps<"/market/[symbol]">) {
             {m.receipts.map((r) => (
               <li key={r.id}>
                 {new Date(r.ts * 1000).toLocaleString()}{" "}
-                <a className="text-sky-700 hover:underline dark:text-sky-400" href={`${apiBase()}/api/snapshots/${r.snapshot_hash}.json`}>snapshot</a>
+                <a className="text-sky-700 hover:underline dark:text-sky-400" href={browserApiUrl(`/api/snapshots/${r.snapshot_hash}.json`)}>snapshot</a>
                 {r.explorer_url && <> <a className="text-sky-700 hover:underline dark:text-sky-400" href={r.explorer_url}>Solana</a></>}
               </li>
             ))}

@@ -4,6 +4,13 @@ import { apiBase } from "@/lib/api-base";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+/** Session/status mint on Next.js (Vercel env). Market tools still hit the FastAPI tunnel. */
+async function copilotJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const r = await fetch(path, init);
+  if (!r.ok) throw new Error(`${r.status} ${path}`);
+  return (await r.json()) as T;
+}
+
 async function getJson<T>(path: string, init?: RequestInit): Promise<T> {
   const r = await fetch(`${apiBase()}${path}`, init);
   if (!r.ok) throw new Error(`${r.status} ${path}`);
@@ -64,10 +71,10 @@ export type CopilotResolve = {
 };
 
 export const fetchCopilotStatus = () =>
-  getJson<{ elevenlabs_configured: boolean; agent_id_set: boolean; api_key_set: boolean }>("/api/copilot/status");
+  copilotJson<{ elevenlabs_configured: boolean; agent_id_set: boolean; api_key_set: boolean }>("/api/copilot/status");
 
 export const createCopilotSession = (body: { symbol?: string | null; path?: string }) =>
-  getJson<{
+  copilotJson<{
     configured: boolean;
     reason?: string;
     agent_id?: string;

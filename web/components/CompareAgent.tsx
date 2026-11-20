@@ -285,7 +285,9 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
   const beginSession = useCallback(
     (sess: WarmSession) => {
       prepareMicForAgent();
-      const ready = Boolean(sess.conversation_token || sess.signed_url || sess.agent_id);
+      // Need a signed URL or conversation token. Bare agent_id alone fails for private agents
+      // and used to hide mint errors (e.g. Windows WinError 10013).
+      const ready = Boolean(sess.conversation_token || sess.signed_url);
       if (!sess.configured || !ready) {
         openingRef.current = false;
         chimeRef.current = false;
@@ -296,7 +298,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           "agent",
           sess.reason ||
             sess.error ||
-            "ElevenLabs is not configured. Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in backend/.env.",
+            "ElevenLabs is not configured. Set ELEVENLABS_API_KEY and ELEVENLABS_AGENT_ID in Vercel env (or backend/.env locally).",
         );
         dockIfScrolled();
         sessionBusy.current = false;
@@ -333,9 +335,6 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
       } else if (sess.conversation_token) {
         opts.conversationToken = sess.conversation_token;
         opts.connectionType = "webrtc";
-      } else if (sess.agent_id) {
-        opts.agentId = sess.agent_id;
-        opts.connectionType = "websocket";
       }
       // Must run in the click turn. Awaiting first suspends the mic and the session never connects.
       startSession(opts);
@@ -718,14 +717,25 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           </p>
         )}
 
-        <DragHandle className="pointer-events-auto rounded-full" title="Drag orb · tap to open transcript">
+        <DragHandle className="pointer-events-auto rounded-full" title="Drag orb · tap to talk or open transcript">
           <button
             type="button"
             onClick={() => {
               setOrbVisible(true);
+              if (!connected && !voiceLive && !busy) {
+                setOpen(true);
+                void activate();
+                return;
+              }
               setOpen((v) => !v);
             }}
-            aria-label={open ? "Minimize Thin Ice agent transcript" : "Open Thin Ice agent transcript"}
+            aria-label={
+              open
+                ? "Minimize Thin Ice agent transcript"
+                : connected || voiceLive
+                  ? "Open Thin Ice agent transcript"
+                  : "Activate Thin Ice voice agent"
+            }
             tabIndex={orbVisible ? 0 : -1}
             className={`h-[53px] w-[53px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[63px] sm:w-[63px] ${
               (wakeListening || voiceLive) && !connected

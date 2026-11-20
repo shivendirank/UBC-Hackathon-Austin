@@ -100,23 +100,14 @@ def elevenlabs_configured() -> bool:
     return bool(config.ELEVENLABS_API_KEY and config.ELEVENLABS_AGENT_ID)
 
 
-# Keep the TLS connection warm. A fresh client on every "Hey Gemini" adds a full handshake
-# before the browser can open the mic.
-_http: httpx.Client | None = None
-
-
-def _eleven_client() -> httpx.Client:
-    global _http
-    if _http is None:
-        _http = httpx.Client(timeout=8.0)
-    return _http
-
-
 def create_elevenlabs_session(context: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """Mint a short-lived WebSocket signed URL. Never returns the API key.
 
     The browser starts the session with this URL. A WebRTC token was slower to
     reach a live mic here, so the open path stays on the signed URL.
+
+    Prefer a fresh httpx client (a long-lived one can hit WinError 10013 on Windows).
+    Fall back to urllib if httpx cannot open the socket.
     """
     if not elevenlabs_configured():
         return {
@@ -128,7 +119,8 @@ def create_elevenlabs_session(context: Optional[dict[str, Any]] = None) -> dict[
     headers = {"xi-api-key": config.ELEVENLABS_API_KEY}
     signed_url = f"https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id={agent_id}"
     try:
-        response = _eleven_client().get(signed_url, headers=headers)
+        with httpx.Client(timeout=8.0, trust_env=True) as client:
+            response = client.get(signed_url, headers=headers)
         if response.status_code == 200:
             data = response.json()
             return {
@@ -146,12 +138,29 @@ def create_elevenlabs_session(context: Optional[dict[str, Any]] = None) -> dict[
             "error": f"ElevenLabs signed-url HTTP {response.status_code}: {response.text[:300]}",
             "context": context or {},
         }
-    except httpx.HTTPError as e:
-        return {
-            "configured": True,
-            "agent_id": agent_id,
-            "conversation_token": None,
-            "signed_url": None,
-            "error": f"ElevenLabs request failed: {e}",
-            "context": context or {},
-        }
+    except (httpx.HTTPError, OSError) as e:
+        # Windows sometimes blocks httpx sockets (WinError 10013); urllib often still works.
+        try:
+            import json
+            import urllib.error
+            import urllib.request
+
+            req = urllib.request.Request(signed_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            return {
+                "configured": True,
+                "agent_id": agent_id,
+                "conversation_token": None,
+                "signed_url": data.get("signed_url"),
+                "context": context or {},
+            }
+        except (urllib.error.URLError, OSError, TimeoutError, ValueError) as fallback_err:
+            return {
+                "configured": True,
+                "agent_id": agent_id,
+                "conversation_token": None,
+                "signed_url": None,
+                "error": f"ElevenLabs request failed: {e}; urllib fallback: {fallback_err}",
+                "context": context or {},
+            }

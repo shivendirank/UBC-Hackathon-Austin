@@ -1,7 +1,5 @@
 import type { NextConfig } from "next";
 
-const apiOrigin = (process.env.THIN_ICE_API_URL || "").replace(/\/$/, "");
-
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
@@ -13,11 +11,8 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  // One public site URL: browser calls /backend/* on Vercel; we proxy to the live API tunnel.
-  async rewrites() {
-    if (!apiOrigin) return [];
-    return [{ source: "/backend/:path*", destination: `${apiOrigin}/:path*` }];
-  },
+  // /backend/* is handled by app/backend/[...path]/route.ts (adds ngrok skip headers).
+  // Do not rewrite here — rewrites forward the browser User-Agent and ngrok returns HTML.
 };
 
 export default nextConfig;
