@@ -93,9 +93,91 @@ body {
 .forecast-marquee.is-paused { animation-play-state: paused; }
 
 @media (prefers-reduced-motion: reduce) {
-  .sticker-live, .live-dot, .forecast-marquee, .sticker-glint, .chart-draw, .chart-ping { animation: none; }
+  .sticker-live, .live-dot, .forecast-marquee, .sticker-glint, .chart-draw, .chart-ping,
+  .odds-chip, .odds-chip__face { animation: none; }
   .chart-draw { stroke-dashoffset: 0; }
   .sticker, .group:hover .sticker, .sticker:hover, .group:hover .sticker-live { transform: none; }
+  .odds-chip { opacity: 0.35; }
+}
+
+/* Crypto prediction circles behind the board (ambient only) */
+.odds-field-root {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  background: #07080a;
+}
+
+.odds-field {
+  position: absolute;
+  inset: 0;
+  perspective: 1400px;
+}
+
+.odds-field__veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background:
+    radial-gradient(ellipse 65% 50% at 50% 35%, transparent 15%, rgba(7, 8, 10, 0.72) 65%, rgba(7, 8, 10, 0.92) 100%);
+}
+
+.odds-chip {
+  position: absolute;
+  z-index: 1;
+  transform: translate(-50%, -50%) rotate(var(--chip-rot, 0deg));
+  animation: odds-drift var(--chip-dur, 24s) ease-in-out var(--chip-delay, 0s) infinite;
+  opacity: 0.42;
+}
+
+.odds-chip__face {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2em;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: radial-gradient(circle at 35% 30%, rgba(94, 224, 255, 0.12), rgba(20, 23, 28, 0.92) 55%, rgba(7, 8, 10, 0.98));
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: odds-flip calc(var(--chip-dur, 24s) * 0.85) linear var(--chip-delay, 0s) infinite;
+  transform-style: preserve-3d;
+}
+
+.odds-chip__label {
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: clamp(0.85rem, 2vw, 1.2rem);
+  letter-spacing: -0.03em;
+  color: rgba(244, 246, 248, 0.9);
+  line-height: 1;
+}
+
+.odds-chip__sub {
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  font-size: clamp(0.48rem, 0.95vw, 0.6rem);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(139, 149, 161, 0.9);
+  max-width: 85%;
+  text-align: center;
+  line-height: 1.15;
+}
+
+@keyframes odds-drift {
+  0%, 100% { transform: translate(-50%, -50%) translate3d(0, 0, 0) rotate(var(--chip-rot, 0deg)); }
+  33% { transform: translate(-50%, -50%) translate3d(16px, -20px, 30px) rotate(calc(var(--chip-rot, 0deg) + 5deg)); }
+  66% { transform: translate(-50%, -50%) translate3d(-12px, 14px, -16px) rotate(calc(var(--chip-rot, 0deg) - 4deg)); }
+}
+
+@keyframes odds-flip {
+  0%, 100% { transform: rotateY(0deg) rotateX(6deg); }
+  40% { transform: rotateY(180deg) rotateX(-4deg); }
+  70% { transform: rotateY(320deg) rotateX(8deg); }
 }
 
 a:focus-visible,
