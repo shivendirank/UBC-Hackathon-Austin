@@ -18,18 +18,21 @@ export default async function Home(props: PageProps<"/">) {
   const categories = [...new Set(all.map((m) => m.category).filter((c): c is string => Boolean(c)))].sort();
 
   const isDemo = (m: Market) => Boolean(m.synthetic || m.event_title?.includes("Synthetic replay"));
-  // Drop empty / demo / stale books — stale grades read as "Insufficient data" on every tile.
-  let markets = all.filter(
-    (m) => bookStatus(m) !== "Empty" && !isDemo(m) && bookIsFresh(m.updated_at),
-  );
+  // Show every two-sided book; prefer freshly recorded ones so the grid is full while the recorder catches up.
+  let markets = all
+    .filter((m) => bookStatus(m) !== "Empty" && !isDemo(m))
+    .sort((a, b) => Number(bookIsFresh(b.updated_at)) - Number(bookIsFresh(a.updated_at)));
   if (category) markets = markets.filter((m) => m.category === category);
   if (q) {
     const needle = q.toLowerCase();
-    markets = all.filter((m) =>
-      !isDemo(m) &&
-      bookIsFresh(m.updated_at) &&
-      [m.event_title, m.label, m.symbol, m.category].some((v) => v?.toLowerCase().includes(needle)),
-    );
+    markets = all
+      .filter(
+        (m) =>
+          !isDemo(m) &&
+          bookStatus(m) !== "Empty" &&
+          [m.event_title, m.label, m.symbol, m.category].some((v) => v?.toLowerCase().includes(needle)),
+      )
+      .sort((a, b) => Number(bookIsFresh(b.updated_at)) - Number(bookIsFresh(a.updated_at)));
   }
 
   let direct: Market | null = null;
@@ -41,9 +44,7 @@ export default async function Home(props: PageProps<"/">) {
   const relationsData = await getRelations();
   const relations = relationsData?.relations ?? [];
   const inconsistent = inconsistentSymbols(relations);
-  const quoted = all.filter(
-    (m) => bookStatus(m) !== "Empty" && m.odds_pct != null && !isDemo(m) && bookIsFresh(m.updated_at),
-  );
+  const quoted = all.filter((m) => bookStatus(m) !== "Empty" && m.odds_pct != null && !isDemo(m));
   const forecasts = mixBoards(groupEvents(quoted)).slice(0, 18).map((b) => ({
     href: `/market/${encodeURIComponent(b.markets[0].symbol)}`,
     title: b.title,
@@ -97,8 +98,12 @@ export default async function Home(props: PageProps<"/">) {
         </>
       )}
 
-      <p className="mt-8 text-sm">
-        <Link href="/watch" className="font-medium text-[#9aebff] hover:underline">Open your watchlist</Link>
+      <p className="mt-8 text-sm text-[#8b95a1]">
+        Star markets to save them.{" "}
+        <Link href="/watch" className="font-medium text-[#9aebff] hover:underline">
+          Open your watchlist
+        </Link>{" "}
+        (sign in required).
       </p>
     </main>
     </>

@@ -341,7 +341,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
     <>
       <WidgetHost />
       <div
-        className={`pointer-events-none fixed top-[15vh] right-4 z-40 flex flex-col items-end gap-3 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:right-6 ${
+        className={`pointer-events-none fixed top-[11.5vh] right-4 z-40 flex flex-col items-end gap-3 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] sm:right-6 ${
           orbVisible ? "translate-x-0" : "translate-x-[calc(100%+1.5rem)]"
         }`}
         aria-hidden={!orbVisible}
@@ -507,7 +507,7 @@ export function CompareAgent({ symbols = [] }: { symbols?: string[] }) {
           }}
           aria-label="Open Thin Ice agent transcript"
           tabIndex={orbVisible ? 0 : -1}
-          className={`pointer-events-auto h-[66px] w-[66px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[78px] sm:w-[78px] ${
+          className={`pointer-events-auto h-[53px] w-[53px] overflow-hidden rounded-full border bg-[rgba(12,16,22,0.45)] shadow-[0_12px_40px_rgba(0,0,0,0.4)] ring-1 ring-inset backdrop-blur-xl transition sm:h-[63px] sm:w-[63px] ${
             wakeListening && !connected
               ? "border-[#9aebff]/50 ring-[#9aebff]/20"
               : "border-white/25 ring-white/15 hover:border-white/40"

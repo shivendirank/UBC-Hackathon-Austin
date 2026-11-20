@@ -52,13 +52,46 @@ def login(body: AuthBody):
     return {"token": csv_store.issue_token(user), "user": user}
 
 
-@app.get("/api/auth/me")
-def me(authorization: str = Header("")):
+def _user_from_auth(authorization: str) -> dict:
     token = authorization.removeprefix("Bearer ").strip()
     user = csv_store.user_from_token(token) if token else None
     if not user:
         raise HTTPException(401, "not signed in")
-    return {"user": user}
+    return user
+
+
+@app.get("/api/auth/me")
+def me(authorization: str = Header("")):
+    return {"user": _user_from_auth(authorization)}
+
+
+@app.get("/api/watchlist")
+def get_watchlist(authorization: str = Header("")):
+    """Signed-in user's starred markets, with latest grades when available."""
+    user = _user_from_auth(authorization)
+    symbols = csv_store.list_watch_symbols(user["email"])
+    markets = []
+    for symbol in symbols:
+        m = service.get_market(conn, symbol, history_hours=24)
+        if m:
+            markets.append(m)
+        else:
+            markets.append({"symbol": symbol, "missing": True})
+    return {"symbols": symbols, "markets": markets}
+
+
+@app.put("/api/watchlist/{symbol}")
+def put_watch(symbol: str, authorization: str = Header("")):
+    user = _user_from_auth(authorization)
+    symbols = csv_store.add_watch(user["email"], symbol)
+    return {"symbols": symbols, "watching": True}
+
+
+@app.delete("/api/watchlist/{symbol}")
+def delete_watch(symbol: str, authorization: str = Header("")):
+    user = _user_from_auth(authorization)
+    symbols = csv_store.remove_watch(user["email"], symbol)
+    return {"symbols": symbols, "watching": False}
 
 
 @app.get("/api/markets")

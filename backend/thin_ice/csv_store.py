@@ -19,12 +19,14 @@ from . import config
 DATA_DIR = config.DB_PATH.parent
 USERS_CSV = Path(config._env("USERS_CSV", str(DATA_DIR / "users.csv")))
 MARKETS_CSV = Path(config._env("MARKETS_CSV", str(DATA_DIR / "markets.csv")))
+WATCHLIST_CSV = Path(config._env("WATCHLIST_CSV", str(DATA_DIR / "watchlist.csv")))
 
 USER_FIELDS = ["email", "name", "password_hash", "salt", "created_at"]
 MARKET_FIELDS = [
     "symbol", "event_title", "label", "category", "grade", "odds_pct",
     "move_cost_usd", "spread_c", "depth_pct", "status", "updated_at",
 ]
+WATCH_FIELDS = ["email", "symbol", "added_at"]
 
 _AUTH_SECRET = (config.ADMIN_TOKEN or "thin-ice-dev-secret").encode()
 
@@ -32,6 +34,7 @@ _AUTH_SECRET = (config.ADMIN_TOKEN or "thin-ice-dev-secret").encode()
 def _ensure_dir() -> None:
     USERS_CSV.parent.mkdir(parents=True, exist_ok=True)
     MARKETS_CSV.parent.mkdir(parents=True, exist_ok=True)
+    WATCHLIST_CSV.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _hash_password(password: str, salt: str) -> str:
@@ -148,3 +151,54 @@ def write_markets_csv(markets: list[dict]) -> Path:
                 "updated_at": m.get("updated_at") or "",
             })
     return MARKETS_CSV
+
+
+def _read_watch_rows() -> list[dict]:
+    _ensure_dir()
+    if not WATCHLIST_CSV.exists():
+        with WATCHLIST_CSV.open("w", newline="") as f:
+            csv.DictWriter(f, fieldnames=WATCH_FIELDS).writeheader()
+        return []
+    with WATCHLIST_CSV.open(newline="") as f:
+        return [r for r in csv.DictReader(f) if r.get("email") and r.get("symbol")]
+
+
+def _write_watch_rows(rows: Iterable[dict]) -> None:
+    _ensure_dir()
+    with WATCHLIST_CSV.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=WATCH_FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({k: row.get(k, "") for k in WATCH_FIELDS})
+
+
+def list_watch_symbols(email: str) -> list[str]:
+    email = email.strip().lower()
+    seen: list[str] = []
+    for row in _read_watch_rows():
+        if row["email"].lower() != email:
+            continue
+        symbol = row["symbol"].strip()
+        if symbol and symbol not in seen:
+            seen.append(symbol)
+    return seen
+
+
+def add_watch(email: str, symbol: str) -> list[str]:
+    email = email.strip().lower()
+    symbol = symbol.strip()
+    if not symbol:
+        raise ValueError("symbol is required")
+    rows = _read_watch_rows()
+    if not any(r["email"].lower() == email and r["symbol"] == symbol for r in rows):
+        rows.append({"email": email, "symbol": symbol, "added_at": str(int(time.time()))})
+        _write_watch_rows(rows)
+    return list_watch_symbols(email)
+
+
+def remove_watch(email: str, symbol: str) -> list[str]:
+    email = email.strip().lower()
+    symbol = symbol.strip()
+    rows = [r for r in _read_watch_rows() if not (r["email"].lower() == email and r["symbol"] == symbol)]
+    _write_watch_rows(rows)
+    return list_watch_symbols(email)

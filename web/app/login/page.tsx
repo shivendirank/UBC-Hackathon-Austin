@@ -1,13 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 import { API_URL } from "@/lib/api";
 import { clearSession, saveSession } from "@/lib/session";
 
-export default function LoginPage() {
+function safeNext(raw: string | null): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
+  return raw;
+}
+
+function LoginForm() {
   const router = useRouter();
+  const search = useSearchParams();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("demo@thinice.local");
   const [name, setName] = useState("Demo");
@@ -32,7 +38,7 @@ export default function LoginPage() {
         return;
       }
       saveSession(data.token, data.user);
-      router.push("/");
+      router.push(safeNext(search.get("next")));
       router.refresh();
     } catch {
       setError("Can't reach the Thin Ice API. Start uvicorn in backend/.");
@@ -131,5 +137,13 @@ export default function LoginPage() {
         </Link>
       </p>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<main className="mx-auto max-w-md px-6 py-12 text-sm text-[#8b95a1]">Loading…</main>}>
+      <LoginForm />
+    </Suspense>
   );
 }

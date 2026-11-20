@@ -3,6 +3,7 @@ import type { Market, Relation } from "@/lib/api";
 import type { EventBoard } from "@/lib/events";
 import { GradePill } from "@/components/GradePill";
 import { Sticker } from "@/components/Stickers";
+import { WatchButton } from "@/components/WatchButton";
 import { assess, relatedCheck, type VerdictKind } from "@/lib/verdict";
 
 const CHIP: Record<VerdictKind, string> = {
@@ -86,8 +87,11 @@ function Outcome({
           <GradePill grade={market.grade} />
           <p className="min-w-0 text-sm text-[#d7dde4]">{market.label ?? market.symbol}</p>
         </div>
-        <span className="text-lg font-semibold tabular-nums text-white">
-          {market.odds_pct != null ? `${market.odds_pct.toFixed(0)}%` : "—"}
+        <span className="flex shrink-0 items-center gap-1">
+          <span className="text-lg font-semibold tabular-nums text-white">
+            {market.odds_pct != null ? `${market.odds_pct.toFixed(0)}%` : "—"}
+          </span>
+          <WatchButton symbol={market.symbol} compact />
         </span>
       </div>
       <details className="mt-2 group/verdict">
